@@ -4,9 +4,9 @@ import (
 	"flag"
 	"log"
 	"os"
+	"strings"
 
-	"github.com/ceph/go-ceph/rados"
-
+	"github.com/naturali/kmr/executor"
 	"github.com/naturali/kmr/job"
 	"github.com/naturali/kmr/records"
 )

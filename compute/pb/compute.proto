@@ -1,29 +1,18 @@
 syntax = "proto3";
 
-package pb;
+package kmrpb;
 
 service Compute {
-    rpc MapIO(MapIn) returns (MapOut) {}
-    rpc ReduceIO(ReduceIn) returns (ReduceOut) {}
+    rpc ConfigMapper(stream KV) returns (ConfigResponse) {}
+    rpc Map(stream KV) returns (stream KV) {}
+    rpc ConfigReducer(stream KV) returns (ConfigResponse) {}
+    rpc Reduce(stream KV) returns (stream KV) {}
 }
 
 message KV {
     bytes key = 1;
     bytes value = 2;
 }
-
-message MapIn {
-    repeated KV kvs = 1;
-}
-
-message MapOut {
-    repeated KV kvs = 1;
-}
-
-message ReduceIn {
-    repeated KV kvs = 1;
-}
-
-message ReduceOut {
-    repeated KV kvs = 1;
+message ConfigResponse {
+  int32 retcode = 1;
 }

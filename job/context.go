@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 
-	"github.com/ceph/go-ceph/rados"
 
 	"github.com/naturali/kmr/job"
 	"github.com/naturali/kmr/records"
