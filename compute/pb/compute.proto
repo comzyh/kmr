@@ -4,15 +4,16 @@ package kmrpb;
 
 service Compute {
     rpc ConfigMapper(stream KV) returns (ConfigResponse) {}
-    rpc Map(stream KV) returns (stream KV) {}
+    rpc Map(stream KV) returns (stream KV) {} // (key, value)s -> (key, value)s
     rpc ConfigReducer(stream KV) returns (ConfigResponse) {}
-    rpc Reduce(stream KV) returns (stream KV) {}
+    rpc Reduce(stream KV) returns (stream KV) {} // key, values -> values
 }
 
 message KV {
     bytes key = 1;
     bytes value = 2;
 }
+
 message ConfigResponse {
   int32 retcode = 1;
 }
