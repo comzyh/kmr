@@ -1,5 +1,7 @@
 package records
 
+import "bytes"
+
 type ReaderHeap []RecordReader
 
 func (rh ReaderHeap) Len() int {
@@ -7,7 +9,7 @@ func (rh ReaderHeap) Len() int {
 }
 
 func (rh ReaderHeap) Less(i, j int) bool {
-	return rh[i].Peek().Key < rh[j].Peek().Key
+	return bytes.Compare(rh[i].Peek().Key, rh[j].Peek().Key) == -1
 }
 
 func (rh ReaderHeap) Swap(i, j int) {
@@ -37,9 +39,10 @@ func MergeReaders(readers []RecordReader, writer RecordWriter) {
 
 	for c.Len() > 0 {
 		reader := c.Pop()
-		r, err := reader.ReadRecord(1)
-		if err != nil {
+		if reader.HasNext() {
+			r := reader.Peek()
 			writer.WriteRecord(r)
+			reader.Pop()
 		}
 		if reader.HasNext() {
 			c.Push(reader)

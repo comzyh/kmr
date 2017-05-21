@@ -1,39 +1,38 @@
 package job
 
 import (
-	"flag"
+	"fmt"
 	"hash/fnv"
-	"log"
-	"os"
 
-
-	"github.com/naturali/kmr/job"
 	"github.com/naturali/kmr/records"
 )
 
 type Context struct {
 	writers []records.RecordWriter
+	jobconf *JobConfig
 }
 
 func GetContext(task *Task, jobconf JobConfig) Context {
 	// TODO: instantial by jobconf
 	// if phase == map
 	// 	get writers
-	writers := make(records.RecordWriter, jobconf.ShardCount)
+	writers := make([]records.RecordWriter, jobconf.ShardCount)
 	for i := 0; i < jobconf.ShardCount; i++ {
 		records.MakeRecordWriter("file", map[string]string{
-			"filename": fmt.Sprintf("%s_%s_%d", jobconf.JobName, task.Phash, i),
+			"filename": fmt.Sprintf("%s_%s_%d", jobconf.JobName, task.Phase, i),
 		})
 	}
-	return Context{writers: writers}
+	return Context{
+		writers: writers,
+		jobconf: &jobconf,
+	}
 }
 
 func (ctx *Context) Write(records []records.Record) {
-	for r := range records {
+	for _, r := range records {
 		h := fnv.New32a()
-		h.Write([]byte(s))
-		writer := ctx.writers[h.Sum32()%ctx.shardCount]
-		writer.WriteRecords([]records.Record{r})
+		h.Write(r.Key)
+		writer := ctx.writers[h.Sum32()%uint32(ctx.jobconf.ReducerCount)]
+		writer.WriteRecord(r)
 	}
-	log.Error("Write not implementd")
 }

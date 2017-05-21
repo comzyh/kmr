@@ -1,11 +1,5 @@
 package job
 
-import (
-	"log"
-
-	"github.com/naturali/kmr/records"
-)
-
 type Job interface {
 	Configure(JobConfig)
 	Launch()
@@ -33,38 +27,39 @@ type Task struct {
 }
 
 func (job *kubeJob) Launch() {
+	// TODO(@comzyh)
 	// fake inits
-	dataSource := []string{"file1, file2", "file3,file4", "file5"}
-	mapperCount := len(dataSource)
-	reducerCount := 5
+	// dataSource := []string{"file1, file2", "file3,file4", "file5"}
+	// mapperCount := len(dataSource)
+	// reducerCount := 5
 
-	for shards := range dataSource {
-		task := &Task{
-			phase:   "map",
-			handler: "name.of.handler",
-			shards:  shards,
-		}
-		kickOffTask(task)
-
-		job.mappers = append(job.mappers, task)
-	}
-
-	job.waitForMapToComplete()
-
-	job.shuffle()
-
-	// fake: from shuffle()
-	reduceKeys := []string{}
-	for key := range reduceKeys {
-		task := &Task{
-			phase:   "reduce",
-			handler: "name.of.handler",
-			shards:  shards,
-		}
-		kickOffask(task)
-		job.reducers = append(job.reducers, Task{taskID})
-	}
-	job.waitForReduceToComplete()
+	// for shards := range dataSource {
+	// 	task := &Task{
+	// 		Phase:   "map",
+	// 		handler: "name.of.handler",
+	// 		shards:  shards,
+	// 	}
+	// 	kickOffTask(task)
+	//
+	// 	job.mappers = append(job.mappers, task)
+	// }
+	//
+	// job.waitForMapToComplete()
+	//
+	// job.shuffle()
+	//
+	// // fake: from shuffle()
+	// reduceKeys := []string{}
+	// for key := range reduceKeys {
+	// 	task := &Task{
+	// 		phase:   "reduce",
+	// 		handler: "name.of.handler",
+	// 		shards:  shards,
+	// 	}
+	// 	kickOffask(task)
+	// 	job.reducers = append(job.reducers, Task{taskID})
+	// }
+	// job.waitForReduceToComplete()
 }
 
 func (job *kubeJob) waitForMapToComplete() {

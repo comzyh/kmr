@@ -2,74 +2,47 @@ package records
 
 import (
 	"bufio"
-	"fmt"
-	"strings"
-
-	"github.com/ceph/go-ceph/rados"
+	"io"
+	"os"
 )
 
 type RecordReader interface {
-	Peek() Record
+	Peek() Record // get first record without drop it
+	Pop()
 	HasNext() bool
-
-	Iter() <-chan Record
 }
 
 type SimpleRecordReader struct {
-	preload chan Record
+	input <-chan Record
+	first *Record
 }
 
-type CephRecordReader struct {
-	keys    []string
-	preload chan Record
-}
-
-func NewCephRecordReader(key string) *CephRecordReader {
-	args := []string{
-		"--mon-host", "1.1.1.1",
+func NewSimpleRecordReader(input <-chan Record) *SimpleRecordReader {
+	reader := SimpleRecordReader{
+		input: input,
+		first: nil,
 	}
-	conn, _ := rados.NewConn()
-	err := conn.ParseCmdLineArgs(args)
-	err = conn.Connect()
-	ioctx, err := conn.OpenIOContext("ni")
-	if err != nil {
-		fmt.Println("OpenIOContext err: ", err)
-	}
-
-	preload := make(chan Record, 1000)
-	go func() {
-		buff := make([]byte, 5)
-		var offset uint64 = 0
-		for {
-			n, err := ioctx.Read("obj", buff, offset)
-			if err != nil {
-				fmt.Printf("Cannot write %s, err: %v\n", "obj", err)
-				break
-			}
-			if n > 0 {
-				offset += uint64(n)
-				// TODO: parse and push to preload
-			} else {
-				fmt.Printf("EOF")
-				break
-			}
-			fmt.Printf("read count: %d, content: %s\n", n, buff[:n])
-		}
-		close(preload)
-	}()
-
-	return &CephRecordReader{
-		key:     key,
-		preload: preload,
-	}
+	return &reader
 }
 
-func (crr *CephRecordReader) Iter() <-chan Record {
-	return crr.preload
+func (srr *SimpleRecordReader) Peek() Record {
+	return *srr.first
 }
 
-func (srr *SimpleRecordReader) Iter() <-chan Record {
-	return srr.preload
+func (srr *SimpleRecordReader) Pop() {
+	srr.first = nil
+}
+
+func (srr *SimpleRecordReader) HasNext() bool {
+	if srr.first != nil {
+		return true
+	}
+	record, ok := <-srr.input
+	if !ok {
+		return false
+	}
+	srr.first = &record
+	return true
 }
 
 func NewConsoleRecordReader() *SimpleRecordReader {
@@ -79,7 +52,7 @@ func NewConsoleRecordReader() *SimpleRecordReader {
 	feedStream(preload, reader)
 
 	return &SimpleRecordReader{
-		preload: preload,
+		input: preload,
 	}
 }
 
@@ -94,33 +67,26 @@ func NewFileRecordReader(filename string) *SimpleRecordReader {
 	feedStream(preload, reader)
 
 	return &SimpleRecordReader{
-		preload: preload,
+		input: preload,
 	}
 }
 
-func feedStream(preload <-chan Record, reader bufio.Reader) {
+func feedStream(preload chan<- Record, reader io.Reader) {
 	go func() {
 		for {
-			text, err = reader.ReadString("\n")
-			if err != nil {
-				fmt.Printf("Cannot read %s, err: %v\n", err)
+			var err error
+			// Read Key
+			record, err := ReadRecord(reader)
+			if err == io.EOF {
 				break
 			}
-			fmt.Printf("read line: %s\n", text)
-
-			// TODO:
-			vals := strings.SplitN(text, " ", 2)
-			if len(vals) == 2 {
-				preload <- Record{vals[0], vals[1]}
-			} else {
-				fmt.Printf("Cannot parse %s\n", text)
-			}
+			preload <- record
 		}
 		close(preload)
 	}()
 }
 
-func MakeRecordReader(name string, params map[string]string) {
+func MakeRecordReader(name string, params map[string]string) RecordReader {
 	// TODO: registry
 	// noway to instance directly by type name in Golang
 	switch name {

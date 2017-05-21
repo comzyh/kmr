@@ -1,26 +1,25 @@
 package records
 
-import "bufio"
+import (
+	"io"
+	"os"
+)
 
 type RecordWriter interface {
-	WriteRecords([]Record) error
+	WriteRecord(Record) error
 }
 
 type SimpleRecordWriter struct {
-	ioctx bufio.Writer
+	ioctx io.Writer
 }
 
-func (srw *SimpleRecordWriter) WriteRecords(records []Record) error {
-	for r := range records {
-		srw.ioctx.WriteString(fmt.Sprintf("%s %s\n", r.Key, r.Val))
-	}
+func (srw *SimpleRecordWriter) WriteRecord(record Record) error {
+	return WriteRecord(srw.ioctx, record)
 }
 
 func NewConsoleRecordWriter() *SimpleRecordWriter {
-	writer := bufio.NewWriter(os.Stdout)
-
-	return &SimpleRecordReader{
-		ioctx: writer,
+	return &SimpleRecordWriter{
+		ioctx: os.Stdout,
 	}
 }
 
@@ -30,14 +29,13 @@ func NewFileRecordWriter(filename string) *SimpleRecordWriter {
 	if err != nil {
 		panic("fail to create file reader")
 	}
-	writer := bufio.NewWriter(file)
 
-	return &SimpleRecordReader{
-		ioctx: writer,
+	return &SimpleRecordWriter{
+		ioctx: file,
 	}
 }
 
-func MakeRecordWriter(name string, params map[string]string) {
+func MakeRecordWriter(name string, params map[string]string) *SimpleRecordWriter {
 	// TODO: registry
 	// noway to instance directly by type name in Golang
 	switch name {
