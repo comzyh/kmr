@@ -71,7 +71,7 @@ func (s *wordCountSerer) Reduce(stream kmrpb.Compute_ReduceServer) error {
 		} else {
 			emit()
 			word = string(kv.Key)
-			count = 1
+			count, _ = strconv.Atoi(string(kv.Value))
 		}
 	}
 }

@@ -9,7 +9,7 @@ import (
 
 type RecordReader interface {
 	Peek() Record // get first record without drop it
-	Pop()
+	Pop() Record
 	HasNext() bool
 }
 
@@ -30,8 +30,10 @@ func (srr *SimpleRecordReader) Peek() Record {
 	return *srr.first
 }
 
-func (srr *SimpleRecordReader) Pop() {
+func (srr *SimpleRecordReader) Pop() (res Record) {
+	res = *srr.first
 	srr.first = nil
+	return
 }
 
 func (srr *SimpleRecordReader) HasNext() bool {
@@ -71,6 +73,20 @@ func NewFileRecordReader(filename string) *SimpleRecordReader {
 		input: preload,
 	}
 }
+func NewTextFileRecordReader(filename string) *SimpleRecordReader {
+	file, err := os.Open(filename)
+	if err != nil {
+		panic("fail to create file reader")
+	}
+	reader := bufio.NewReader(file)
+	preload := make(chan Record, 1000)
+
+	feedTextStream(preload, reader)
+
+	return &SimpleRecordReader{
+		input: preload,
+	}
+}
 
 func feedStream(preload chan<- Record, reader io.Reader) {
 	go func() {
@@ -89,10 +105,16 @@ func feedStream(preload chan<- Record, reader io.Reader) {
 
 // feedTextStream read text file, emit (linenumber.(string), line.([]byte))
 func feedTextStream(preload chan<- Record, reader io.Reader) {
+	fmt.Println("feedTextStream")
 	go func() {
 		r := bufio.NewReader(reader)
 		var lineNum int32
-		for line, _, err := r.ReadLine(); err != io.EOF; { // TODO: deal with isPerfix
+		for {
+			line, err := r.ReadBytes('\n')
+			if err == io.EOF {
+				break
+			}
+			// fmt.Println(lineNum, string(line))
 			preload <- Record{Key: []byte(fmt.Sprint(lineNum)), Value: line}
 			lineNum++
 		}
@@ -104,6 +126,8 @@ func MakeRecordReader(name string, params map[string]string) RecordReader {
 	// TODO: registry
 	// noway to instance directly by type name in Golang
 	switch name {
+	case "textfile":
+		return NewTextFileRecordReader(params["filename"])
 	case "file":
 		return NewFileRecordReader(params["filename"])
 	case "console":
