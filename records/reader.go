@@ -2,6 +2,7 @@ package records
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -73,6 +74,27 @@ func NewFileRecordReader(filename string) *SimpleRecordReader {
 		input: preload,
 	}
 }
+
+func NewStreamRecordReader(reader io.Reader) *SimpleRecordReader {
+	preload := make(chan Record, 1000)
+
+	feedStream(preload, reader)
+
+	return &SimpleRecordReader{
+		input: preload,
+	}
+}
+
+func NewTextStreamRecordReader(reader io.Reader) *SimpleRecordReader {
+	preload := make(chan Record, 1000)
+
+	feedTextStream(preload, reader)
+
+	return &SimpleRecordReader{
+		input: preload,
+	}
+}
+
 func NewTextFileRecordReader(filename string) *SimpleRecordReader {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -103,33 +125,38 @@ func feedStream(preload chan<- Record, reader io.Reader) {
 	}()
 }
 
-// feedTextStream read text file, emit (linenumber.(string), line.([]byte))
+// feedTextStream read text file, emit (linenumber.(uint32), line.([]byte))
 func feedTextStream(preload chan<- Record, reader io.Reader) {
 	fmt.Println("feedTextStream")
 	go func() {
 		r := bufio.NewReader(reader)
-		var lineNum int32
+		var lineNum uint32
 		for {
 			line, err := r.ReadBytes('\n')
 			if err == io.EOF {
 				break
 			}
-			// fmt.Println(lineNum, string(line))
-			preload <- Record{Key: []byte(fmt.Sprint(lineNum)), Value: line}
+			record := Record{Key: make([]byte, 4), Value: line}
+			binary.BigEndian.PutUint32(record.Key, lineNum)
+			preload <- record
 			lineNum++
 		}
 		close(preload)
 	}()
 }
 
-func MakeRecordReader(name string, params map[string]string) RecordReader {
+func MakeRecordReader(name string, params map[string]interface{}) RecordReader {
 	// TODO: registry
 	// noway to instance directly by type name in Golang
 	switch name {
 	case "textfile":
-		return NewTextFileRecordReader(params["filename"])
+		return NewTextFileRecordReader(params["filename"].(string))
 	case "file":
-		return NewFileRecordReader(params["filename"])
+		return NewFileRecordReader(params["filename"].(string))
+	case "stream":
+		return NewStreamRecordReader(params["reader"].(io.Reader))
+	case "textstream":
+		return NewTextStreamRecordReader(params["reader"].(io.Reader))
 	case "console":
 		return NewConsoleRecordReader()
 	default:

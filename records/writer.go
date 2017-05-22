@@ -7,19 +7,20 @@ import (
 
 type RecordWriter interface {
 	WriteRecord(Record) error
+	Close() error
 }
 
 type SimpleRecordWriter struct {
-	ioctx io.Writer
+	writer io.Writer
 }
 
 func (srw *SimpleRecordWriter) WriteRecord(record Record) error {
-	return WriteRecord(srw.ioctx, record)
+	return WriteRecord(srw.writer, record)
 }
 
 func NewConsoleRecordWriter() *SimpleRecordWriter {
 	return &SimpleRecordWriter{
-		ioctx: os.Stdout,
+		writer: os.Stdout,
 	}
 }
 
@@ -31,18 +32,25 @@ func NewFileRecordWriter(filename string) *SimpleRecordWriter {
 	}
 
 	return &SimpleRecordWriter{
-		ioctx: file,
+		writer: file,
+	}
+}
+func NewStreamRecordWriter(writer io.Writer) *SimpleRecordWriter {
+	return &SimpleRecordWriter{
+		writer: writer,
 	}
 }
 
-func MakeRecordWriter(name string, params map[string]string) *SimpleRecordWriter {
+func MakeRecordWriter(name string, params map[string]interface{}) *SimpleRecordWriter {
 	// TODO: registry
 	// noway to instance directly by type name in Golang
 	switch name {
 	case "file":
-		return NewFileRecordWriter(params["filename"])
+		return NewFileRecordWriter(params["filename"].(string))
 	case "console":
 		return NewConsoleRecordWriter()
+	case "stream":
+		return NewStreamRecordWriter(params["writer"].(io.Writer))
 	default:
 		return NewConsoleRecordWriter()
 

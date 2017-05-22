@@ -7,6 +7,7 @@ import (
 
 	"google.golang.org/grpc"
 
+	"github.com/naturali/kmr/bucket"
 	kmrpb "github.com/naturali/kmr/compute/pb"
 	"github.com/naturali/kmr/executor"
 	"github.com/naturali/kmr/records"
@@ -32,15 +33,18 @@ func main() {
 		log.Fatalf("Fail to config mapper: %v", err)
 	}
 	// Mapper
-	rr := records.MakeRecordReader("textfile", map[string]string{"filename": *inputFile})
+	rr := records.MakeRecordReader("textfile", map[string]interface{}{"filename": *inputFile})
 	fmt.Println("Map")
 	aggregated, err := compute.Map(rr)
 	if err != nil {
 		log.Fatalf("Fail to Map: %v", err)
 	}
+	bk := bucket.NewFilePool("/tmp")
+	writer, err := bk.OpenWrite("intermediate.dat")
+	rw := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
 	for _, record := range aggregated {
+		rw.WriteRecord(record)
 		fmt.Println(string(record.Key), ":", string(record.Value))
 	}
-
 	log.Println("Exit executor")
 }

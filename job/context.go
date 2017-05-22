@@ -18,7 +18,7 @@ func GetContext(task *Task, jobconf JobConfig) Context {
 	// 	get writers
 	writers := make([]records.RecordWriter, jobconf.ShardCount)
 	for i := 0; i < jobconf.ShardCount; i++ {
-		records.MakeRecordWriter("file", map[string]string{
+		records.MakeRecordWriter("file", map[string]interface{}{
 			"filename": fmt.Sprintf("%s_%s_%d", jobconf.JobName, task.Phase, i),
 		})
 	}
