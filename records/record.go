@@ -6,6 +6,7 @@ import (
 	"io"
 )
 
+// Record Record struct
 type Record struct {
 	Key   []byte
 	Value []byte
@@ -25,6 +26,7 @@ func (r ByKey) Less(i, j int) bool {
 	return bytes.Compare(r[i].Key, r[j].Key) == -1
 }
 
+// ReadRecord Read a record from reader
 func ReadRecord(reader io.Reader) (record Record, err error) {
 	var keySize int32
 	var valueSize int32
@@ -49,6 +51,8 @@ func ReadRecord(reader io.Reader) (record Record, err error) {
 	}
 	return Record{Key: key, Value: value}, nil
 }
+
+// WriteRecord Write a record to writer
 func WriteRecord(writer io.Writer, record Record) (err error) {
 	err = binary.Write(writer, binary.BigEndian, int32(len(record.Key)))
 	if err != nil {

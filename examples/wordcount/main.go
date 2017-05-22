@@ -31,6 +31,7 @@ func (s *wordCountSerer) Map(stream kmrpb.Compute_MapServer) error {
 	wordMap := make(map[string]int)
 	for {
 		kv, err := stream.Recv()
+		// Flush all result
 		if err == io.EOF {
 			for key, value := range wordMap {
 				stream.Send(&kmrpb.KV{Key: []byte(key), Value: []byte(strconv.Itoa(value))})
@@ -40,6 +41,7 @@ func (s *wordCountSerer) Map(stream kmrpb.Compute_MapServer) error {
 		if err != nil {
 			return err
 		}
+		// split words
 		for _, key := range strings.FieldsFunc(string(kv.Value), func(c rune) bool {
 			return !unicode.IsLetter(c)
 		}) {
@@ -79,6 +81,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
+	log.Println("listening on port", port)
 	s := grpc.NewServer()
 	kmrpb.RegisterComputeServer(s, &wordCountSerer{})
 	reflection.Register(s)

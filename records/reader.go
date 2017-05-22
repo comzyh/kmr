@@ -2,6 +2,7 @@ package records
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"os"
 )
@@ -81,6 +82,19 @@ func feedStream(preload chan<- Record, reader io.Reader) {
 				break
 			}
 			preload <- record
+		}
+		close(preload)
+	}()
+}
+
+// feedTextStream read text file, emit (linenumber.(string), line.([]byte))
+func feedTextStream(preload chan<- Record, reader io.Reader) {
+	go func() {
+		r := bufio.NewReader(reader)
+		var lineNum int32
+		for line, _, err := r.ReadLine(); err != io.EOF; { // TODO: deal with isPerfix
+			preload <- Record{Key: []byte(fmt.Sprint(lineNum)), Value: line}
+			lineNum++
 		}
 		close(preload)
 	}()
