@@ -34,13 +34,18 @@ func main() {
 	}
 	// Mapper
 	rr := records.MakeRecordReader("textfile", map[string]interface{}{"filename": *inputFile})
-	fmt.Println("Map")
 	aggregated, err := compute.Map(rr)
 	if err != nil {
 		log.Fatalf("Fail to Map: %v", err)
 	}
-	bk := bucket.NewFilePool("/tmp")
+	bk, err := bucket.NewFilePool("/tmp/xsdx")
+	if err != nil {
+		log.Fatalf("Fail to open bucket: %v", err)
+	}
 	writer, err := bk.OpenWrite("intermediate.dat")
+	if err != nil {
+		log.Fatalf("Failed to open intermediate: %v", err)
+	}
 	rw := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
 	for _, record := range aggregated {
 		rw.WriteRecord(record)

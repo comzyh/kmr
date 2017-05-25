@@ -13,8 +13,14 @@ type FSBucket struct {
 }
 
 // NewFilePool NewFilePool
-func NewFilePool(directory string) Bucket {
-	return FSBucket{directory: directory}
+func NewFilePool(directory string) (bk Bucket, err error) {
+	if _, err = os.Stat(directory); os.IsNotExist(err) {
+		err = os.MkdirAll(directory, 0755)
+		if err != nil {
+			return
+		}
+	}
+	return FSBucket{directory: directory}, nil
 }
 
 func (fsb FSBucket) OpenRead(key string) (rd io.Reader, err error) {

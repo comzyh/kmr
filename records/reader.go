@@ -3,7 +3,6 @@ package records
 import (
 	"bufio"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"os"
 )
@@ -127,7 +126,6 @@ func feedStream(preload chan<- Record, reader io.Reader) {
 
 // feedTextStream read text file, emit (linenumber.(uint32), line.([]byte))
 func feedTextStream(preload chan<- Record, reader io.Reader) {
-	fmt.Println("feedTextStream")
 	go func() {
 		r := bufio.NewReader(reader)
 		var lineNum uint32
