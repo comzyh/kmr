@@ -2,13 +2,14 @@ package main
 
 import (
 	"io"
-	"log"
 	"net"
 	"strconv"
 	"strings"
 	"unicode"
 
 	kmrpb "github.com/naturali/kmr/compute/pb"
+	"github.com/naturali/kmr/util/log"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -28,24 +29,21 @@ func (s *wordCountSerer) ConfigReducer(stream kmrpb.Compute_ConfigReducerServer)
 }
 
 func (s *wordCountSerer) Map(stream kmrpb.Compute_MapServer) error {
-	wordMap := make(map[string]int)
 	for {
 		kv, err := stream.Recv()
 		// Flush all result
 		if err == io.EOF {
-			for key, value := range wordMap {
-				stream.Send(&kmrpb.KV{Key: []byte(key), Value: []byte(strconv.Itoa(value))})
-			}
 			return nil
 		}
 		if err != nil {
+			log.Error(err)
 			return err
 		}
 		// split words
 		for _, key := range strings.FieldsFunc(string(kv.Value), func(c rune) bool {
 			return !unicode.IsLetter(c)
 		}) {
-			wordMap[key]++
+			stream.Send(&kmrpb.KV{Key: []byte(key), Value: []byte(strconv.Itoa(1))})
 		}
 	}
 }
@@ -53,26 +51,19 @@ func (s *wordCountSerer) Map(stream kmrpb.Compute_MapServer) error {
 func (s *wordCountSerer) Reduce(stream kmrpb.Compute_ReduceServer) error {
 	word := ""
 	count := 0
-	emit := func() {
-		stream.Send(&kmrpb.KV{Key: []byte(word), Value: []byte(strconv.Itoa(count))})
-	}
 	for {
 		kv, err := stream.Recv()
 		if err == io.EOF {
-			emit()
+			stream.Send(&kmrpb.KV{Key: []byte(word), Value: []byte(strconv.Itoa(count))})
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-		if string(kv.Key) == word {
-			c, _ := strconv.Atoi(string(kv.Value))
-			count += c
-		} else {
-			emit()
+		if count == 0 {
 			word = string(kv.Key)
-			count, _ = strconv.Atoi(string(kv.Value))
 		}
+		count += 1
 	}
 }
 
@@ -81,7 +72,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
-	log.Println("listening on port", port)
+	log.Debug("listening on port", port)
 	s := grpc.NewServer()
 	kmrpb.RegisterComputeServer(s, &wordCountSerer{})
 	reflection.Register(s)
