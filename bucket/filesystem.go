@@ -2,7 +2,6 @@ package bucket
 
 import (
 	"bufio"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -22,7 +21,7 @@ type FileRecordReader struct {
 	srr    *records.SimpleRecordReader
 }
 
-func (reader FileRecordReader) Peek() records.Record {
+func (reader FileRecordReader) Peek() *records.Record {
 	return reader.srr.Peek()
 }
 
@@ -30,7 +29,7 @@ func (reader FileRecordReader) HasNext() bool {
 	return reader.srr.HasNext()
 }
 
-func (reader FileRecordReader) Pop() records.Record {
+func (reader FileRecordReader) Pop() *records.Record {
 	return reader.srr.Pop()
 }
 
@@ -61,7 +60,7 @@ func (writer FileRecordWriter) Write(data []byte) (int, error) {
 	return writer.writer.Write(data)
 }
 
-func (writer FileRecordWriter) WriteRecord(record records.Record) error {
+func (writer FileRecordWriter) WriteRecord(record *records.Record) error {
 	return records.WriteRecord(writer, record)
 }
 

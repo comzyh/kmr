@@ -8,7 +8,7 @@ import (
 type RecordWriter interface {
 	Write([]byte) (int, error) // raw Write
 	Flush() error              // Flush
-	WriteRecord(Record) error
+	WriteRecord(*Record) error
 	Close() error
 }
 

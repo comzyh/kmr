@@ -123,10 +123,10 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 		if err != nil {
 			log.Fatalf("Failed to open intermediate: %v", err)
 		}
-		rw := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
 		for _, record := range aggregated[i] {
-			rw.WriteRecord(record)
+			writer.WriteRecord(record)
 		}
+		writer.Close()
 	}
 
 	log.Debug("FINISH Write", time.Now().Sub(startTime))
@@ -140,7 +140,7 @@ func (cw *ComputeWrap) doReduce(bk bucket.Bucket, reduceID int, nMap int) ([]*km
 		if err != nil {
 			log.Fatalf("Failed to open intermediate: %v", err)
 		}
-		readers = append(readers, records.MakeRecordReader("stream", map[string]interface{}{"reader": reader}))
+		readers = append(readers, reader)
 	}
 	outputRecords := make([]*kmrpb.KV, 0)
 	inputs := make(chan *records.Record, 1024)
