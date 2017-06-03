@@ -16,7 +16,7 @@ type SimpleRecordWriter struct {
 	writer io.Writer
 }
 
-func (srw *SimpleRecordWriter) WriteRecord(record Record) error {
+func (srw *SimpleRecordWriter) WriteRecord(record *Record) error {
 	return WriteRecord(srw.writer, record)
 }
 
@@ -28,7 +28,7 @@ func NewConsoleRecordWriter() *SimpleRecordWriter {
 
 func NewFileRecordWriter(filename string) *SimpleRecordWriter {
 	// TODO:
-	file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0755)
+	file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0766)
 	if err != nil {
 		panic("fail to create file reader")
 	}

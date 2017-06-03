@@ -5,21 +5,23 @@ import (
 	"encoding/binary"
 	"io"
 	"os"
+
+	"github.com/naturali/kmr/util/log"
 )
 
 type RecordReader interface {
-	Peek() Record // get first record without drop it
-	Pop() Record
+	Peek() *Record // get first record without drop it
+	Pop() *Record
 	HasNext() bool
 	Close() error
 }
 
 type SimpleRecordReader struct {
-	input <-chan Record
+	input <-chan *Record
 	first *Record
 }
 
-func NewSimpleRecordReader(input <-chan Record) *SimpleRecordReader {
+func NewSimpleRecordReader(input <-chan *Record) *SimpleRecordReader {
 	reader := SimpleRecordReader{
 		input: input,
 		first: nil,
@@ -27,12 +29,12 @@ func NewSimpleRecordReader(input <-chan Record) *SimpleRecordReader {
 	return &reader
 }
 
-func (srr *SimpleRecordReader) Peek() Record {
-	return *srr.first
+func (srr *SimpleRecordReader) Peek() *Record {
+	return srr.first
 }
 
-func (srr *SimpleRecordReader) Pop() (res Record) {
-	res = *srr.first
+func (srr *SimpleRecordReader) Pop() (res *Record) {
+	res = srr.first
 	srr.first = nil
 	return
 }
@@ -45,7 +47,7 @@ func (srr *SimpleRecordReader) HasNext() bool {
 	if !ok {
 		return false
 	}
-	srr.first = &record
+	srr.first = record
 	return true
 }
 
@@ -55,7 +57,7 @@ func (srr *SimpleRecordReader) Close() error {
 
 func NewConsoleRecordReader() *SimpleRecordReader {
 	reader := bufio.NewReader(os.Stdin)
-	preload := make(chan Record, 1000)
+	preload := make(chan *Record, 1000)
 
 	feedStream(preload, reader)
 
@@ -70,7 +72,7 @@ func NewFileRecordReader(filename string) *SimpleRecordReader {
 		panic("fail to create file reader")
 	}
 	reader := bufio.NewReader(file)
-	preload := make(chan Record, 1000)
+	preload := make(chan *Record, 1000)
 
 	feedStream(preload, reader)
 
@@ -80,7 +82,7 @@ func NewFileRecordReader(filename string) *SimpleRecordReader {
 }
 
 func NewStreamRecordReader(reader io.Reader) *SimpleRecordReader {
-	preload := make(chan Record, 1000)
+	preload := make(chan *Record, 1000)
 
 	feedStream(preload, reader)
 
@@ -90,7 +92,7 @@ func NewStreamRecordReader(reader io.Reader) *SimpleRecordReader {
 }
 
 func NewTextStreamRecordReader(reader io.Reader) *SimpleRecordReader {
-	preload := make(chan Record, 1000)
+	preload := make(chan *Record, 1000)
 
 	feedTextStream(preload, reader)
 
@@ -105,7 +107,7 @@ func NewTextFileRecordReader(filename string) *SimpleRecordReader {
 		panic("fail to create file reader")
 	}
 	reader := bufio.NewReader(file)
-	preload := make(chan Record, 1000)
+	preload := make(chan *Record, 1000)
 
 	feedTextStream(preload, reader)
 
@@ -114,7 +116,7 @@ func NewTextFileRecordReader(filename string) *SimpleRecordReader {
 	}
 }
 
-func feedStream(preload chan<- Record, reader io.Reader) {
+func feedStream(preload chan<- *Record, reader io.Reader) {
 	go func() {
 		for {
 			var err error
@@ -122,6 +124,8 @@ func feedStream(preload chan<- Record, reader io.Reader) {
 			record, err := ReadRecord(reader)
 			if err == io.EOF {
 				break
+			} else if err != nil {
+				log.Fatal(err)
 			}
 			preload <- record
 		}
@@ -130,7 +134,7 @@ func feedStream(preload chan<- Record, reader io.Reader) {
 }
 
 // feedTextStream read text file, emit (linenumber.(uint32), line.([]byte))
-func feedTextStream(preload chan<- Record, reader io.Reader) {
+func feedTextStream(preload chan<- *Record, reader io.Reader) {
 	go func() {
 		r := bufio.NewReader(reader)
 		var lineNum uint32
@@ -138,8 +142,10 @@ func feedTextStream(preload chan<- Record, reader io.Reader) {
 			line, err := r.ReadBytes('\n')
 			if err == io.EOF {
 				break
+			} else if err != nil {
+				log.Fatal(err)
 			}
-			record := Record{Key: make([]byte, 4), Value: line}
+			record := &Record{Key: make([]byte, 4), Value: line}
 			binary.BigEndian.PutUint32(record.Key, lineNum)
 			preload <- record
 			lineNum++

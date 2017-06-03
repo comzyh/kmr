@@ -2,6 +2,7 @@ package bucket
 
 import (
 	"bufio"
+	"io"
 	"log"
 	"os"
 	"path/filepath"

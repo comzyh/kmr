@@ -12,7 +12,7 @@ type Record struct {
 	Value []byte
 }
 
-type ByKey []Record
+type ByKey []*Record
 
 func (r ByKey) Len() int {
 	return len(r)
@@ -27,33 +27,33 @@ func (r ByKey) Less(i, j int) bool {
 }
 
 // ReadRecord Read a record from reader
-func ReadRecord(reader io.Reader) (record Record, err error) {
+func ReadRecord(reader io.Reader) (*Record, error) {
 	var keySize int32
 	var valueSize int32
-	err = binary.Read(reader, binary.BigEndian, &keySize)
+	err := binary.Read(reader, binary.BigEndian, &keySize)
 	if err != nil {
-		return
+		return nil, err
 	}
 	key := make([]byte, keySize)
 	_, err = io.ReadFull(reader, key)
 	if err != nil {
-		return
+		return nil, err
 	}
 	//read Value
 	err = binary.Read(reader, binary.BigEndian, &valueSize)
 	if err != nil {
-		return
+		return nil, err
 	}
 	value := make([]byte, valueSize)
 	_, err = io.ReadFull(reader, value)
 	if err != nil {
-		return
+		return nil, err
 	}
-	return Record{Key: key, Value: value}, nil
+	return &Record{Key: key, Value: value}, nil
 }
 
 // WriteRecord Write a record to writer
-func WriteRecord(writer io.Writer, record Record) (err error) {
+func WriteRecord(writer io.Writer, record *Record) (err error) {
 	err = binary.Write(writer, binary.BigEndian, int32(len(record.Key)))
 	if err != nil {
 		return
