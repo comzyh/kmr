@@ -11,6 +11,7 @@ type RecordReader interface {
 	Peek() Record // get first record without drop it
 	Pop() Record
 	HasNext() bool
+	Close() error
 }
 
 type SimpleRecordReader struct {
@@ -46,6 +47,10 @@ func (srr *SimpleRecordReader) HasNext() bool {
 	}
 	srr.first = &record
 	return true
+}
+
+func (srr *SimpleRecordReader) Close() error {
+	return nil
 }
 
 func NewConsoleRecordReader() *SimpleRecordReader {

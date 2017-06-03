@@ -48,8 +48,8 @@ func main() {
 	}
 	rw := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
 	for _, record := range aggregated {
-		rw.WriteRecord(record)
 		fmt.Println(string(record.Key), ":", string(record.Value))
+		rw.WriteRecord(record)
 	}
 	log.Println("Exit executor")
 }

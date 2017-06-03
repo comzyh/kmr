@@ -1,9 +1,9 @@
 package bucket
 
-import "io"
+import "github.com/naturali/kmr/records"
 
 // Bucket Object Pool to store objects
 type Bucket interface {
-	OpenRead(key string) (io.Reader, error)
-	OpenWrite(key string) (io.Writer, error)
+	OpenRead(key string) (records.RecordReader, error)
+	OpenWrite(key string) (records.RecordWriter, error)
 }
