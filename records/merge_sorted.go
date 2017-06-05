@@ -2,6 +2,7 @@ package records
 
 import (
 	"bytes"
+
 	"github.com/naturali/kmr/util"
 )
 

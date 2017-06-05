@@ -29,7 +29,7 @@ func NewPriorityQueue(compareFunc func(a, b interface{}) int) *PriorityQueue {
 func (pq *PriorityQueue) Len() int { return len(pq.items) }
 
 func (pq *PriorityQueue) Less(i, j int) bool {
-	return pq.compare(pq.items[i], pq.items[j]) < 0
+	return pq.compare(pq.items[i].value, pq.items[j].value) < 0
 }
 
 func (pq *PriorityQueue) Swap(i, j int) {

@@ -42,12 +42,15 @@ func Reduce(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV {
 	return out
 }
 
-func PostFunc(kvs <-chan *kmrpb.KV) {
+func PostFunc(kvs <-chan *kmrpb.KV) <-chan struct{} {
+	doneSignal := make(chan struct{})
 	go func() {
 		for kv := range kvs {
 			fmt.Println(string(kv.Key), string(kv.Value))
 		}
+		close(doneSignal)
 	}()
+	return doneSignal
 }
 
 func main() {

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/naturali/kmr/bucket"
@@ -17,7 +18,7 @@ import (
 type ComputeWrap struct {
 	mapFunc    func(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV
 	reduceFunc func(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV
-	postFunc   func(kvs <-chan *kmrpb.KV)
+	postFunc   func(kvs <-chan *kmrpb.KV) <-chan struct{}
 }
 
 func (cw *ComputeWrap) BindMapper(mapper func(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV) {
@@ -28,7 +29,7 @@ func (cw *ComputeWrap) BindReducer(reducer func(kvs <-chan *kmrpb.KV) <-chan *km
 	cw.reduceFunc = reducer
 }
 
-func (cw *ComputeWrap) BindPostFunction(post func(kvs <-chan *kmrpb.KV)) {
+func (cw *ComputeWrap) BindPostFunction(post func(kvs <-chan *kmrpb.KV) <-chan struct{}) {
 	cw.postFunc = post
 }
 
@@ -44,10 +45,10 @@ func (cw *ComputeWrap) Run() {
 		reduceID  = flag.Int("reduceID", 0, "reducer id")
 	)
 	flag.Parse()
-	if *phase == "map" {
+	switch *phase {
+	case "map":
 		log.Infof("starting id%d mapper", *mapID)
 
-		//ConfigMapper
 		rr := records.MakeRecordReader("textfile", map[string]interface{}{"filename": *inputFile})
 		bk, err := bucket.NewFilePool(*dataDir + "/" + *jobName)
 		if err != nil {
@@ -57,106 +58,117 @@ func (cw *ComputeWrap) Run() {
 		if err := cw.doMap(rr, bk, *mapID, *nReduce); err != nil {
 			log.Fatalf("Fail to Map: %v", err)
 		}
-	} else if *phase == "reduce" {
+	case "reduce":
 		log.Infof("starting id%d reducer", *reduceID)
-		_ = nMap
 
-		//ConfigReducer
-		//
 		bk, err := bucket.NewFilePool(*dataDir + "/" + *jobName)
 		if err != nil {
 			log.Fatalf("Fail to open bucket: %v", err)
 		}
 		// Reduce
-		if res, err := cw.doReduce(bk, *reduceID, *nMap); err != nil {
-			log.Fatalf("Fail to Map: %v", err)
-		} else {
-			outputFile := *dataDir + "/" + *jobName + "/" + "res-" + strconv.Itoa(*reduceID) + ".t"
-			rw := records.MakeRecordWriter("file", map[string]interface{}{"filename": outputFile})
-			for _, r := range res {
-				rw.WriteRecord(ConvertKVtToRecord(r))
-			}
-
-			if cw.postFunc != nil {
-				inputKV := make(chan *kmrpb.KV, 1024)
-				cw.postFunc(inputKV)
-				for _, r := range res {
-					inputKV <- r
-				}
-			}
+		res, err := cw.doReduce(bk, *reduceID, *nMap)
+		if err != nil {
+			log.Fatalf("Fail to Reduce: %v", err)
 		}
+		outputFile := *dataDir + "/" + *jobName + "/" + "res-" + strconv.Itoa(*reduceID) + ".t"
+		rw := records.MakeRecordWriter("file", map[string]interface{}{"filename": outputFile})
+		for _, r := range res {
+			rw.WriteRecord(KVToRecord(r))
+		}
+
+		if cw.postFunc != nil {
+			inputKV := make(chan *kmrpb.KV, 1024)
+			waitc := cw.postFunc(inputKV)
+			for _, r := range res {
+				inputKV <- r
+			}
+			close(inputKV)
+			<-waitc
+		}
+	default:
+		panic("unsupported phase")
 	}
 	log.Info("Exit executor")
 }
 
-// Map do Map operation and return aggregated
+// doMap does map operation and save the intermediate files.
 func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID int, nReduce int) (err error) {
 	startTime := time.Now()
 	aggregated := make([][]*records.Record, 0)
 	for i := 0; i < nReduce; i++ {
 		aggregated = append(aggregated, make([]*records.Record, 0))
 	}
+
+	// map
 	waitc := make(chan struct{})
 	inputKV := make(chan *kmrpb.KV, 1024)
 	outputKV := cw.mapFunc(inputKV)
-
 	go func() {
 		for in := range outputKV {
 			rBucketID := util.HashBytesKey(in.Key) % nReduce
-			aggregated[rBucketID] = append(aggregated[rBucketID], ConvertKVtToRecord(in))
+			aggregated[rBucketID] = append(aggregated[rBucketID], KVToRecord(in))
 		}
 		close(waitc)
 	}()
-
 	for rr.HasNext() {
-		inputKV <- ConvertRecordToKV(rr.Pop())
+		inputKV <- RecordToKV(rr.Pop())
 	}
 	close(inputKV)
 	<-waitc
+	log.Debug("DONE Map. Took:", time.Since(startTime))
 
-	log.Debug("DONE Map", time.Now().Sub(startTime))
-
+	// write intermediate files
+	var wg sync.WaitGroup
 	for i := 0; i < nReduce; i++ {
-		sort.Sort(records.ByKey(aggregated[i]))
-		log.Debug("DONE Map", time.Now().Sub(startTime))
-		writer, err := bk.OpenWrite(bucket.IntermidateFileName(mapID, i))
-		if err != nil {
-			log.Fatalf("Failed to open intermediate: %v", err)
-		}
-		for _, record := range aggregated[i] {
-			writer.WriteRecord(record)
-		}
-		writer.Close()
+		wg.Add(1)
+		go func(reduceID int) {
+			sort.Sort(records.ByKey(aggregated[reduceID]))
+			intermediateFileName := bucket.IntermediateFileName(mapID, reduceID)
+			writer, err := bk.OpenWrite(intermediateFileName)
+			if err != nil {
+				log.Fatalf("Failed to open intermediate: %v", err)
+			}
+			for _, record := range aggregated[reduceID] {
+				writer.WriteRecord(record)
+			}
+			writer.Close()
+			wg.Done()
+			log.Debug("DONE Write", intermediateFileName)
+		}(i)
 	}
+	wg.Wait()
 
-	log.Debug("FINISH Write", time.Now().Sub(startTime))
+	log.Debug("FINISH Write IntermediateFiles. Took:", time.Since(startTime))
 	return
 }
 
+// doReduce does reduce operation
 func (cw *ComputeWrap) doReduce(bk bucket.Bucket, reduceID int, nMap int) ([]*kmrpb.KV, error) {
 	readers := make([]records.RecordReader, 0)
 	for i := 0; i < nMap; i++ {
-		reader, err := bk.OpenRead(bucket.IntermidateFileName(i, reduceID))
+		reader, err := bk.OpenRead(bucket.IntermediateFileName(i, reduceID))
 		if err != nil {
 			log.Fatalf("Failed to open intermediate: %v", err)
 		}
 		readers = append(readers, reader)
 	}
 	outputRecords := make([]*kmrpb.KV, 0)
-	inputs := make(chan *records.Record, 1024)
-	go records.MergeSort(readers, inputs)
+	sorted := make(chan *records.Record, 1024)
+	go records.MergeSort(readers, sorted)
 	var lastKey []byte
 	values := make([][]byte, 0)
-	for r := range inputs {
-		if lastKey == nil || bytes.Compare(lastKey, r.Key) != 0 {
-			if lastKey != nil {
-				res, _ := cw.doReduceForSingleKey(lastKey, values)
-				outputRecords = append(outputRecords, res...)
-			}
-			values = values[:0]
-			lastKey = r.Key
+	for r := range sorted {
+		if bytes.Equal(lastKey, r.Key) {
+			values = append(values, r.Value)
+			continue
 		}
-		values = append(values, r.Value)
+		if lastKey != nil {
+			res, _ := cw.doReduceForSingleKey(lastKey, values)
+			outputRecords = append(outputRecords, res...)
+		}
+		values = values[:0]
+		lastKey = r.Key
+		values = append(values, r.Key)
 	}
 	if lastKey != nil {
 		res, _ := cw.doReduceForSingleKey(lastKey, values)
@@ -187,12 +199,12 @@ func (cw *ComputeWrap) doReduceForSingleKey(key []byte, values [][]byte) ([]*kmr
 	return ret, nil
 }
 
-// ConvertRecortToKV
-func ConvertRecordToKV(record *records.Record) *kmrpb.KV {
+// RecordToKV converts an Record to a kmrpb.KV
+func RecordToKV(record *records.Record) *kmrpb.KV {
 	return &kmrpb.KV{Key: record.Key, Value: record.Value}
 }
 
-// ConvertKVtToRecord
-func ConvertKVtToRecord(kv *kmrpb.KV) *records.Record {
+// KVToRecord converts a kmrpb.KV to an Record
+func KVToRecord(kv *kmrpb.KV) *records.Record {
 	return &records.Record{Key: kv.Key, Value: kv.Value}
 }

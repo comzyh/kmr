@@ -1,8 +1,9 @@
 package bucket
 
 import (
+	"fmt"
+
 	"github.com/naturali/kmr/records"
-	"strconv"
 )
 
 // Bucket Object Pool to store objects
@@ -11,6 +12,7 @@ type Bucket interface {
 	OpenWrite(key string) (records.RecordWriter, error)
 }
 
-func IntermidateFileName(mapID int, reduceID int) string {
-	return strconv.Itoa(mapID) + "-" + strconv.Itoa(reduceID) + ".t"
+// IntermediateFileName constructs the name of the intermediate file.
+func IntermediateFileName(mapID int, reduceID int) string {
+	return fmt.Sprintf("%d-%d.t", mapID, reduceID)
 }
