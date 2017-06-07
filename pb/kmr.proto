@@ -9,7 +9,6 @@ service Master {
 
 message RegisterParams {
     string jobName = 1;
-    string clientPort = 2;
 }
 
 message ReportInfo {

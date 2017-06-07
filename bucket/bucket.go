@@ -16,3 +16,7 @@ type Bucket interface {
 func IntermediateFileName(mapID int, reduceID int) string {
 	return fmt.Sprintf("%d-%d.t", mapID, reduceID)
 }
+
+func FlushoutFileName(phase string, taskID int, flushID int) string {
+	return fmt.Sprintf("flush-%s-%d-%d.t", phase, taskID, flushID)
+}

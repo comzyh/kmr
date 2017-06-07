@@ -116,6 +116,19 @@ func NewTextFileRecordReader(filename string) *SimpleRecordReader {
 	}
 }
 
+func NewMemoryRecordReader(records []*Record) *SimpleRecordReader {
+	preload := make(chan *Record, 1000)
+	go func() {
+		for _, r := range records {
+			preload <- r
+		}
+		close(preload)
+	}()
+	return &SimpleRecordReader{
+		input: preload,
+	}
+}
+
 func feedStream(preload chan<- *Record, reader io.Reader) {
 	go func() {
 		for {
@@ -166,6 +179,8 @@ func MakeRecordReader(name string, params map[string]interface{}) RecordReader {
 		return NewStreamRecordReader(params["reader"].(io.Reader))
 	case "textstream":
 		return NewTextStreamRecordReader(params["reader"].(io.Reader))
+	case "memory":
+		return NewMemoryRecordReader(params["data"].([]*Record))
 	case "console":
 		return NewConsoleRecordReader()
 	default:

@@ -19,6 +19,10 @@ import (
 	"google.golang.org/grpc"
 )
 
+const (
+	FLUSH_SIZE = 10 * 1024 * 1024 // 80M
+)
+
 var (
 	jobName   = flag.String("jobname", "wc", "jobName")
 	inputFile = flag.String("file", "", "input file path")
@@ -157,20 +161,51 @@ func (cw *ComputeWrap) phaseSelector(jobName string, phase string, intermediateD
 // doMap does map operation and save the intermediate files.
 func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID int, nReduce int) (err error) {
 	startTime := time.Now()
-	aggregated := make([][]*records.Record, 0)
-	for i := 0; i < nReduce; i++ {
-		aggregated = append(aggregated, make([]*records.Record, 0))
-	}
+	aggregated := make([]*records.Record, 0)
+	flushOutFiles := make([]string, 0)
+	currentAggregatedSize := 0
 
 	// map
 	waitc := make(chan struct{})
 	inputKV := make(chan *kmrpb.KV, 1024)
 	outputKV := cw.mapFunc(inputKV)
 	go func() {
+		var waitFlushWrite sync.WaitGroup
 		for in := range outputKV {
-			rBucketID := util.HashBytesKey(in.Key) % nReduce
-			aggregated[rBucketID] = append(aggregated[rBucketID], KVToRecord(in))
+			aggregated = append(aggregated, KVToRecord(in))
+			currentAggregatedSize += 8 + len(in.Key) + len(in.Value)
+			if currentAggregatedSize >= FLUSH_SIZE {
+
+				filename := bucket.FlushoutFileName("map", mapID, len(flushOutFiles))
+				waitFlushWrite.Add(1)
+				go func(filename string, data []*records.Record) {
+					writer, err := bk.OpenWrite(filename)
+					if err != nil {
+						log.Fatal(err)
+					}
+					sort.Slice(data, func(i, j int) bool {
+						return bytes.Compare(data[i].Key, data[j].Key) < 0
+					})
+					for _, r := range data {
+						if err := writer.WriteRecord(r); err != nil {
+							log.Fatal(err)
+						}
+					}
+					if err := writer.Close(); err != nil {
+						log.Fatal(err)
+					}
+					waitFlushWrite.Done()
+				}(filename, aggregated)
+
+				aggregated = make([]*records.Record, 0)
+				currentAggregatedSize = 0
+				flushOutFiles = append(flushOutFiles, filename)
+			}
 		}
+		sort.Slice(aggregated, func(i, j int) bool {
+			return bytes.Compare(aggregated[i].Key, aggregated[j].Key) < 0
+		})
+		waitFlushWrite.Wait()
 		close(waitc)
 	}()
 	for rr.HasNext() {
@@ -180,26 +215,35 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 	<-waitc
 	log.Debug("DONE Map. Took:", time.Since(startTime))
 
-	// write intermediate files
-	var wg sync.WaitGroup
-	for i := 0; i < nReduce; i++ {
-		wg.Add(1)
-		go func(reduceID int) {
-			sort.Sort(records.ByKey(aggregated[reduceID]))
-			intermediateFileName := bucket.IntermediateFileName(mapID, reduceID)
-			writer, err := bk.OpenWrite(intermediateFileName)
-			if err != nil {
-				log.Fatalf("Failed to open intermediate: %v", err)
-			}
-			for _, record := range aggregated[reduceID] {
-				writer.WriteRecord(record)
-			}
-			writer.Close()
-			wg.Done()
-			log.Debug("DONE Write", intermediateFileName)
-		}(i)
+	readers := make([]records.RecordReader, 0)
+	for _, file := range flushOutFiles {
+		reader, err := bk.OpenRead(file)
+		if err != nil {
+			log.Fatalf("Failed to open intermediate: %v", err)
+		}
+		readers = append(readers, reader)
 	}
-	wg.Wait()
+	readers = append(readers, records.MakeRecordReader("memory", map[string]interface{}{"data": aggregated}))
+	sorted := make(chan *records.Record, 1024)
+	go records.MergeSort(readers, sorted)
+
+	writers := make([]records.RecordWriter, 0)
+	for i := 0; i < nReduce; i++ {
+		intermediateFileName := bucket.IntermediateFileName(mapID, i)
+		writer, err := bk.OpenWrite(intermediateFileName)
+		if err != nil {
+			log.Fatalf("Failed to open intermediate: %v", err)
+		}
+		writers = append(writers, writer)
+	}
+	for r := range sorted {
+		rBucketID := util.HashBytesKey(r.Key) % nReduce
+		_ = rBucketID
+		writers[rBucketID].WriteRecord(r)
+	}
+	for i := 0; i < nReduce; i++ {
+		writers[i].Close()
+	}
 
 	log.Debug("FINISH Write IntermediateFiles. Took:", time.Since(startTime))
 	return
