@@ -9,16 +9,32 @@ import (
 	"time"
 
 	"github.com/naturali/kmr/bucket"
-	kmrpb "github.com/naturali/kmr/compute/pb"
+	"github.com/naturali/kmr/master"
+	kmrpb "github.com/naturali/kmr/pb"
 	"github.com/naturali/kmr/records"
 	"github.com/naturali/kmr/util"
 	"github.com/naturali/kmr/util/log"
+
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
+)
+
+var (
+	jobName   = flag.String("jobname", "wc", "jobName")
+	inputFile = flag.String("file", "", "input file path")
+	dataDir   = flag.String("intermediate-dir", "/tmp/", "directory of intermediate files")
+	phase     = flag.String("phase", "", "map or reduce")
+	nMap      = flag.Int("nMap", 1, "number of mappers")
+	nReduce   = flag.Int("nReduce", 1, "number of reducers")
+	mapID     = flag.Int("mapID", 0, "mapper id")
+	reduceID  = flag.Int("reduceID", 0, "reducer id")
+
+	masterAddr = flag.String("master-addr", "", "the address of master")
 )
 
 type ComputeWrap struct {
 	mapFunc    func(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV
 	reduceFunc func(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV
-	postFunc   func(kvs <-chan *kmrpb.KV) <-chan struct{}
 }
 
 func (cw *ComputeWrap) BindMapper(mapper func(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV) {
@@ -29,66 +45,113 @@ func (cw *ComputeWrap) BindReducer(reducer func(kvs <-chan *kmrpb.KV) <-chan *km
 	cw.reduceFunc = reducer
 }
 
-func (cw *ComputeWrap) BindPostFunction(post func(kvs <-chan *kmrpb.KV) <-chan struct{}) {
-	cw.postFunc = post
+func (cw *ComputeWrap) Run() {
+	flag.Parse()
+	if *masterAddr == "" {
+		// Local Run
+		var taskID int
+		switch *phase {
+		case "map":
+			taskID = *mapID
+		case "reduce":
+			taskID = *reduceID
+		}
+		err := cw.phaseSelector(*jobName, *phase, *dataDir, *inputFile, *nMap, *nReduce, taskID)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		var retcode kmrpb.ReportInfo_ErrorCode
+		// Distributed Mode
+		cc, err := grpc.Dial(*masterAddr, grpc.WithInsecure())
+		if err != nil {
+			log.Fatal("cannot connect to master", err)
+		}
+		masterClient := kmrpb.NewMasterClient(cc)
+		for {
+			task, err := masterClient.RequestTask(context.Background(), &kmrpb.RegisterParams{
+				JobName: *jobName,
+			})
+			if err != nil || task.Retcode != 0 {
+				log.Error(err)
+				// TODO: random backoff
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			taskInfo := task.Taskinfo
+			timer := time.NewTimer(master.HEARTBEAT_TIMEOUT / 2)
+			go func() {
+				for range timer.C {
+					// SendHeartBeat
+					masterClient.ReportTask(context.Background(), &kmrpb.ReportInfo{
+						JobName:  *jobName,
+						Phase:    taskInfo.Phase,
+						TaskID:   taskInfo.TaskID,
+						WorkerID: task.WorkerID,
+						Retcode:  kmrpb.ReportInfo_DOING,
+					})
+				}
+			}()
+			err = cw.phaseSelector(taskInfo.JobName, taskInfo.Phase, taskInfo.IntermediateDir, taskInfo.File,
+				int(taskInfo.NMap), int(taskInfo.NReduce), int(taskInfo.TaskID))
+			retcode = kmrpb.ReportInfo_FINISH
+			if err != nil {
+				log.Debug(err)
+				retcode = kmrpb.ReportInfo_ERROR
+			}
+			timer.Stop()
+			masterClient.ReportTask(context.Background(), &kmrpb.ReportInfo{
+				JobName:  *jobName,
+				Phase:    taskInfo.Phase,
+				TaskID:   taskInfo.TaskID,
+				WorkerID: task.WorkerID,
+				Retcode:  retcode,
+			})
+			// backoff
+			if err != nil {
+				time.Sleep(1 * time.Second)
+			}
+		}
+	}
 }
 
-func (cw *ComputeWrap) Run() {
-	var (
-		jobName   = flag.String("jobname", "wc", "jobName")
-		inputFile = flag.String("file", "", "input file path")
-		dataDir   = flag.String("intermediate-dir", "/tmp/", "directory of intermediate files")
-		phase     = flag.String("phase", "", "map or reduce")
-		nMap      = flag.Int("nMap", 1, "number of mappers")
-		nReduce   = flag.Int("nReduce", 1, "number of reducers")
-		mapID     = flag.Int("mapID", 0, "mapper id")
-		reduceID  = flag.Int("reduceID", 0, "reducer id")
-	)
-	flag.Parse()
-	switch *phase {
+func (cw *ComputeWrap) phaseSelector(jobName string, phase string, intermediateDir string, file string,
+	nMap int, nReduce int, taskID int) error {
+	switch phase {
 	case "map":
-		log.Infof("starting id%d mapper", *mapID)
+		log.Infof("starting id%d mapper", taskID)
 
-		rr := records.MakeRecordReader("textfile", map[string]interface{}{"filename": *inputFile})
-		bk, err := bucket.NewFilePool(*dataDir + "/" + *jobName)
+		rr := records.MakeRecordReader("textfile", map[string]interface{}{"filename": file})
+		bk, err := bucket.NewFilePool(intermediateDir + "/" + jobName)
 		if err != nil {
 			log.Fatalf("Fail to open bucket: %v", err)
 		}
 		// Mapper
-		if err := cw.doMap(rr, bk, *mapID, *nReduce); err != nil {
+		if err := cw.doMap(rr, bk, taskID, nReduce); err != nil {
 			log.Fatalf("Fail to Map: %v", err)
 		}
 	case "reduce":
-		log.Infof("starting id%d reducer", *reduceID)
+		log.Infof("starting id%d reducer", nReduce)
 
-		bk, err := bucket.NewFilePool(*dataDir + "/" + *jobName)
+		bk, err := bucket.NewFilePool(intermediateDir + "/" + jobName)
 		if err != nil {
 			log.Fatalf("Fail to open bucket: %v", err)
 		}
 		// Reduce
-		res, err := cw.doReduce(bk, *reduceID, *nMap)
+		res, err := cw.doReduce(bk, taskID, nMap)
 		if err != nil {
 			log.Fatalf("Fail to Reduce: %v", err)
 		}
-		outputFile := *dataDir + "/" + *jobName + "/" + "res-" + strconv.Itoa(*reduceID) + ".t"
+		outputFile := intermediateDir + "/" + jobName + "/" + "res-" + strconv.Itoa(taskID) + ".t"
 		rw := records.MakeRecordWriter("file", map[string]interface{}{"filename": outputFile})
 		for _, r := range res {
 			rw.WriteRecord(KVToRecord(r))
 		}
-
-		if cw.postFunc != nil {
-			inputKV := make(chan *kmrpb.KV, 1024)
-			waitc := cw.postFunc(inputKV)
-			for _, r := range res {
-				inputKV <- r
-			}
-			close(inputKV)
-			<-waitc
-		}
 	default:
-		panic("unsupported phase")
+		panic("bad phase")
 	}
 	log.Info("Exit executor")
+	return nil
 }
 
 // doMap does map operation and save the intermediate files.

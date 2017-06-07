@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package kmrpb;
+
+service Master {
+    rpc RequestTask(RegisterParams) returns (Task) {}
+    rpc ReportTask(ReportInfo) returns (Response) {}
+}
+
+message RegisterParams {
+    string jobName = 1;
+    string clientPort = 2;
+}
+
+message ReportInfo {
+    string jobName = 1;
+    string phase = 2;
+    int32 taskID = 3;
+    int64 workerID = 4;
+    enum ErrorCode {
+        DOING = 0;
+        ERROR = 1;
+        FINISH = 2;
+    }
+    ErrorCode retcode = 5;
+}
+
+message Task {
+    int32 retcode = 1;
+    TaskInfo taskinfo = 2;
+    int64 workerID = 3;
+}
+
+message TaskInfo {
+    string jobName = 1;
+    string file = 2;
+    string intermediateDir = 3;
+    string phase = 4;
+    int32 nMap = 5;
+    int32 nReduce = 6;
+    int32 TaskID = 7;
+}
+
+message Response {
+    int32 retcode = 1;
+}
+
+message KV {
+    bytes key = 1;
+    bytes value = 2;
+}

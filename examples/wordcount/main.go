@@ -1,13 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 	"unicode"
 
-	kmrpb "github.com/naturali/kmr/compute/pb"
 	"github.com/naturali/kmr/executor"
+	kmrpb "github.com/naturali/kmr/pb"
 )
 
 func Map(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV {
@@ -42,21 +41,9 @@ func Reduce(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV {
 	return out
 }
 
-func PostFunc(kvs <-chan *kmrpb.KV) <-chan struct{} {
-	doneSignal := make(chan struct{})
-	go func() {
-		for kv := range kvs {
-			fmt.Println(string(kv.Key), string(kv.Value))
-		}
-		close(doneSignal)
-	}()
-	return doneSignal
-}
-
 func main() {
 	cw := &executor.ComputeWrap{}
 	cw.BindMapper(Map)
 	cw.BindReducer(Reduce)
-	cw.BindPostFunction(PostFunc)
 	cw.Run()
 }
