@@ -38,6 +38,7 @@ message TaskInfo {
     int32 nMap = 5;
     int32 nReduce = 6;
     int32 TaskID = 7;
+    repeated int64 commitMappers = 8;
 }
 
 message Response {

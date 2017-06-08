@@ -48,6 +48,8 @@ type Master struct {
 	wg        sync.WaitGroup     // WaitGroup for waiting all of tasks finished on each phase
 	tasks     []*Task            // Holding all of tasks
 	heartbeat map[int64]chan int // Heartbeat channel for each worker
+
+	commitMappers []int64
 }
 
 // CheckHeartbeat keeps checking the heartbeat of each worker. It is either DEAD, PULSE, FINISH or losing signal of
@@ -126,6 +128,9 @@ func (master *Master) Schedule(phase string) {
 		if phase == mapPhase {
 			taskInfo.File = master.Files[i]
 		}
+		if phase == reducePhase {
+			taskInfo.CommitMappers = master.commitMappers
+		}
 		master.tasks[i] = &Task{
 			state:    STATE_IDLE,
 			workers:  make(map[int64]int),
@@ -135,6 +140,13 @@ func (master *Master) Schedule(phase string) {
 	master.wg.Add(nTasks)
 	master.Unlock()
 	master.wg.Wait()
+
+	if phase == mapPhase {
+		master.commitMappers = make([]int64, 0)
+		for _, t := range master.tasks {
+			master.commitMappers = append(master.commitMappers, t.commitWorker)
+		}
+	}
 }
 
 type server struct {

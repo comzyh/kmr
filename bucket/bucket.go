@@ -13,10 +13,10 @@ type Bucket interface {
 }
 
 // IntermediateFileName constructs the name of the intermediate file.
-func IntermediateFileName(mapID int, reduceID int) string {
-	return fmt.Sprintf("%d-%d.t", mapID, reduceID)
+func IntermediateFileName(mapID int, reduceID int, workerID int64) string {
+	return fmt.Sprintf("%d-%d-%d.t", mapID, reduceID, workerID)
 }
 
-func FlushoutFileName(phase string, taskID int, flushID int) string {
-	return fmt.Sprintf("flush-%s-%d-%d.t", phase, taskID, flushID)
+func FlushoutFileName(phase string, taskID int, flushID int, workerID int64) string {
+	return fmt.Sprintf("flush-%s-%d-%d-%d.t", phase, taskID, flushID, workerID)
 }

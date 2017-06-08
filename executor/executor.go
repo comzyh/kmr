@@ -60,7 +60,7 @@ func (cw *ComputeWrap) Run() {
 		case "reduce":
 			taskID = *reduceID
 		}
-		err := cw.phaseSelector(*jobName, *phase, *dataDir, *inputFile, *nMap, *nReduce, taskID)
+		err := cw.phaseSelector(*jobName, *phase, *dataDir, *inputFile, *nMap, *nReduce, taskID, 0, make([]int64, *nMap))
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -97,7 +97,7 @@ func (cw *ComputeWrap) Run() {
 				}
 			}()
 			err = cw.phaseSelector(taskInfo.JobName, taskInfo.Phase, taskInfo.IntermediateDir, taskInfo.File,
-				int(taskInfo.NMap), int(taskInfo.NReduce), int(taskInfo.TaskID))
+				int(taskInfo.NMap), int(taskInfo.NReduce), int(taskInfo.TaskID), task.WorkerID, taskInfo.CommitMappers)
 			retcode = kmrpb.ReportInfo_FINISH
 			if err != nil {
 				log.Debug(err)
@@ -120,7 +120,8 @@ func (cw *ComputeWrap) Run() {
 }
 
 func (cw *ComputeWrap) phaseSelector(jobName string, phase string, intermediateDir string, file string,
-	nMap int, nReduce int, taskID int) error {
+	nMap int, nReduce int, taskID int, workerID int64,
+	commitMappers []int64) error {
 	switch phase {
 	case "map":
 		log.Infof("starting id%d mapper", taskID)
@@ -131,7 +132,7 @@ func (cw *ComputeWrap) phaseSelector(jobName string, phase string, intermediateD
 			log.Fatalf("Fail to open bucket: %v", err)
 		}
 		// Mapper
-		if err := cw.doMap(rr, bk, taskID, nReduce); err != nil {
+		if err := cw.doMap(rr, bk, taskID, nReduce, workerID); err != nil {
 			log.Fatalf("Fail to Map: %v", err)
 		}
 	case "reduce":
@@ -142,7 +143,7 @@ func (cw *ComputeWrap) phaseSelector(jobName string, phase string, intermediateD
 			log.Fatalf("Fail to open bucket: %v", err)
 		}
 		// Reduce
-		res, err := cw.doReduce(bk, taskID, nMap)
+		res, err := cw.doReduce(bk, taskID, nMap, commitMappers)
 		if err != nil {
 			log.Fatalf("Fail to Reduce: %v", err)
 		}
@@ -159,7 +160,7 @@ func (cw *ComputeWrap) phaseSelector(jobName string, phase string, intermediateD
 }
 
 // doMap does map operation and save the intermediate files.
-func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID int, nReduce int) (err error) {
+func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID int, nReduce int, workerID int64) (err error) {
 	startTime := time.Now()
 	aggregated := make([]*records.Record, 0)
 	flushOutFiles := make([]string, 0)
@@ -176,7 +177,7 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 			currentAggregatedSize += 8 + len(in.Key) + len(in.Value)
 			if currentAggregatedSize >= FLUSH_SIZE {
 
-				filename := bucket.FlushoutFileName("map", mapID, len(flushOutFiles))
+				filename := bucket.FlushoutFileName("map", mapID, len(flushOutFiles), workerID)
 				waitFlushWrite.Add(1)
 				go func(filename string, data []*records.Record) {
 					writer, err := bk.OpenWrite(filename)
@@ -229,7 +230,7 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 
 	writers := make([]records.RecordWriter, 0)
 	for i := 0; i < nReduce; i++ {
-		intermediateFileName := bucket.IntermediateFileName(mapID, i)
+		intermediateFileName := bucket.IntermediateFileName(mapID, i, workerID)
 		writer, err := bk.OpenWrite(intermediateFileName)
 		if err != nil {
 			log.Fatalf("Failed to open intermediate: %v", err)
@@ -250,11 +251,11 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 }
 
 // doReduce does reduce operation
-func (cw *ComputeWrap) doReduce(bk bucket.Bucket, reduceID int, nMap int) ([]*kmrpb.KV, error) {
+func (cw *ComputeWrap) doReduce(bk bucket.Bucket, reduceID int, nMap int, commitMappers []int64) ([]*kmrpb.KV, error) {
 	startTime := time.Now()
 	readers := make([]records.RecordReader, 0)
 	for i := 0; i < nMap; i++ {
-		reader, err := bk.OpenRead(bucket.IntermediateFileName(i, reduceID))
+		reader, err := bk.OpenRead(bucket.IntermediateFileName(i, reduceID, commitMappers[i]))
 		if err != nil {
 			log.Fatalf("Failed to open intermediate: %v", err)
 		}
