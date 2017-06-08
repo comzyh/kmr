@@ -251,6 +251,7 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 
 // doReduce does reduce operation
 func (cw *ComputeWrap) doReduce(bk bucket.Bucket, reduceID int, nMap int) ([]*kmrpb.KV, error) {
+	startTime := time.Now()
 	readers := make([]records.RecordReader, 0)
 	for i := 0; i < nMap; i++ {
 		reader, err := bk.OpenRead(bucket.IntermediateFileName(i, reduceID))
@@ -281,6 +282,7 @@ func (cw *ComputeWrap) doReduce(bk bucket.Bucket, reduceID int, nMap int) ([]*km
 		res, _ := cw.doReduceForSingleKey(lastKey, values)
 		outputRecords = append(outputRecords, res...)
 	}
+	log.Debug("DONE Reduce. Took:", time.Since(startTime))
 	return outputRecords, nil
 }
 

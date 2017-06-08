@@ -23,48 +23,75 @@ const (
 	HEARTBEAT_CODE_FINISH = 2
 
 	HEARTBEAT_TIMEOUT = 20 * time.Second
+
+	STATE_IDLE       = 0
+	STATE_INPROGRESS = 1
+	STATE_COMPLETED  = 2
 )
+
+type Task struct {
+	state        int
+	workers      map[int64]int
+	taskInfo     *kmrpb.TaskInfo
+	commitWorker int64
+}
 
 // Master is a map-reduce controller. It stores the state for each task and other runtime progress statuses.
 type Master struct {
-	//sync.Mutex
+	sync.Mutex
 
 	JobName string   // Name of currently executing job
 	DataDir string   // Directory of intermediate files
 	Files   []string // Input files
 	NReduce int      // Number of reduce partitions
 
-	taskChan      chan *kmrpb.TaskInfo // Channel for piping pending task
-	wg            sync.WaitGroup       // WaitGroup for waiting all of tasks finished on each phase
-	tasks         []*kmrpb.TaskInfo    // All TaskInfo
-	taskWorkerID  []int64              // Current workerID of each task
-	taskHeartBeat []chan int           // Each task keeps a heartbeat which indicates the status of each task progress
+	wg        sync.WaitGroup     // WaitGroup for waiting all of tasks finished on each phase
+	tasks     []*Task            // Holding all of tasks
+	heartbeat map[int64]chan int // Heartbeat channel for each worker
 }
 
-// CheckHeartbeat keeps checking the heartbeat of each task. It is either DEAD, PULSE, FINISH or losing signal of
+// CheckHeartbeat keeps checking the heartbeat of each worker. It is either DEAD, PULSE, FINISH or losing signal of
 // heartbeat.
 // If the task is DEAD (occur error while the worker is doing the task) or cannot detect heartbeat in time. Master
 // will releases the task, so that another work can takeover
 // Master will check the heartbeat every 5 seconds. If master cannot detect any heartbeat in the meantime, master
 // regards it as a DEAD worker.
-func (master *Master) CheckHeartbeat(taskID int) {
+func (master *Master) CheckHeartbeatForEachWorker(taskID int, workerID int64, heartbeat chan int) {
 	for {
 		timeout := time.After(HEARTBEAT_TIMEOUT)
 		select {
 		case <-timeout:
 			// the worker fuck up, release the task
-			master.taskWorkerID[taskID] = 0
-			go func() { master.taskChan <- master.tasks[taskID] }()
+			master.Lock()
+			if master.tasks[taskID].state == STATE_INPROGRESS {
+				delete(master.tasks[taskID].workers, workerID)
+				if len(master.tasks[taskID].workers) == 0 {
+					master.tasks[taskID].state = STATE_IDLE
+				}
+			}
+			master.Unlock()
 			return
-		case heartbeatCode := <-master.taskHeartBeat[taskID]:
+		case heartbeatCode := <-heartbeat:
 			// the worker is doing his job
 			switch heartbeatCode {
 			case HEARTBEAT_CODE_DEAD:
 				// the worker fuck up, release the task
-				master.taskWorkerID[taskID] = 0
-				go func() { master.taskChan <- master.tasks[taskID] }()
+				master.Lock()
+				if master.tasks[taskID].state == STATE_INPROGRESS {
+					delete(master.tasks[taskID].workers, workerID)
+					if len(master.tasks[taskID].workers) == 0 {
+						master.tasks[taskID].state = STATE_IDLE
+					}
+				}
+				master.Unlock()
 				return
 			case HEARTBEAT_CODE_FINISH:
+				master.Lock()
+				if master.tasks[taskID].state != STATE_COMPLETED {
+					master.tasks[taskID].state = STATE_COMPLETED
+					master.tasks[taskID].commitWorker = workerID
+				}
+				master.Unlock()
 				master.wg.Done()
 				return
 			case HEARTBEAT_CODE_PULSE:
@@ -76,19 +103,19 @@ func (master *Master) CheckHeartbeat(taskID int) {
 
 // Schedule pipes into tasks for the phase (map or reduce). It will return after all the tasks are finished.
 func (master *Master) Schedule(phase string) {
-	var ntasks int
+	var nTasks int
 	switch phase {
 	case mapPhase:
-		ntasks = len(master.Files)
+		nTasks = len(master.Files)
 	case reducePhase:
-		ntasks = master.NReduce
+		nTasks = master.NReduce
 	}
 
-	master.tasks = make([]*kmrpb.TaskInfo, ntasks)
-	master.taskWorkerID = make([]int64, ntasks)
-	master.taskHeartBeat = make([]chan int, ntasks)
-	for i := 0; i < ntasks; i++ {
-		task := &kmrpb.TaskInfo{
+	master.Lock()
+	master.tasks = make([]*Task, nTasks)
+	master.heartbeat = make(map[int64]chan int)
+	for i := 0; i < nTasks; i++ {
+		taskInfo := &kmrpb.TaskInfo{
 			JobName:         master.JobName,
 			Phase:           phase,
 			IntermediateDir: master.DataDir,
@@ -97,20 +124,16 @@ func (master *Master) Schedule(phase string) {
 			NMap:            int32(len(master.Files)),
 		}
 		if phase == mapPhase {
-			task.File = master.Files[i]
+			taskInfo.File = master.Files[i]
 		}
-		master.tasks[i] = task
-		master.taskWorkerID[i] = 0
-		master.taskHeartBeat[i] = make(chan int)
+		master.tasks[i] = &Task{
+			state:    STATE_IDLE,
+			workers:  make(map[int64]int),
+			taskInfo: taskInfo,
+		}
 	}
-
-	master.wg.Add(ntasks)
-	// pipe in tasks
-	go func(ch chan *kmrpb.TaskInfo) {
-		for i := 0; i < ntasks; i++ {
-			ch <- master.tasks[i]
-		}
-	}(master.taskChan)
+	master.wg.Add(nTasks)
+	master.Unlock()
 	master.wg.Wait()
 }
 
@@ -121,27 +144,37 @@ type server struct {
 // RequestTask is to deliver a task to worker.
 func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*kmrpb.Task, error) {
 	log.Debugf("register %s", in.JobName)
-	ret := &kmrpb.Task{
+	s.master.Lock()
+	defer s.master.Unlock()
+
+	for id, t := range s.master.tasks {
+		if t.state == STATE_IDLE {
+			workerID := rand.Int63()
+			t.workers[workerID] = id
+			t.state = STATE_INPROGRESS
+			s.master.heartbeat[workerID] = make(chan int)
+			log.Debug("deliver a task")
+			go s.master.CheckHeartbeatForEachWorker(id, workerID, s.master.heartbeat[workerID])
+			return &kmrpb.Task{
+				WorkerID: workerID,
+				Retcode:  0,
+				Taskinfo: t.taskInfo,
+			}, nil
+		}
+	}
+	log.Debug("no task right now")
+	return &kmrpb.Task{
 		Retcode: -1,
-	}
-	select {
-	case task := <-s.master.taskChan:
-		ret.Taskinfo = task
-		ret.WorkerID = rand.Int63()
-		s.master.taskWorkerID[task.TaskID] = ret.WorkerID
-		go s.master.CheckHeartbeat(int(task.TaskID))
-		ret.Retcode = 0
-		log.Debug("deliver a task")
-	default:
-		log.Debug("no task right now")
-	}
-	return ret, nil
+	}, nil
 }
 
 // ReportTask is for executor to report its progress state to master.
 func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.Response, error) {
 	log.Debugf("get heartbeat phase=%s, taskid=%d, workid=%d", in.Phase, in.TaskID, in.WorkerID)
-	if s.master.taskWorkerID[in.TaskID] == in.WorkerID {
+	s.master.Lock()
+	defer s.master.Unlock()
+
+	if _, ok := s.master.tasks[in.TaskID].workers[in.WorkerID]; ok {
 		var heartbeatCode int
 		switch in.Retcode {
 		case kmrpb.ReportInfo_FINISH:
@@ -154,7 +187,7 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 			panic("unknown ReportInfo")
 		}
 		go func() {
-			s.master.taskHeartBeat[in.TaskID] <- heartbeatCode
+			s.master.heartbeat[in.WorkerID] <- heartbeatCode
 		}()
 	}
 
@@ -164,11 +197,10 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 // NewMapReduce creates a map-reduce job.
 func NewMapReduce(port string, jobName string, inputFiles []string, dataDir string, nReduce int) {
 	master := &Master{
-		JobName:  jobName,
-		Files:    inputFiles,
-		NReduce:  nReduce,
-		DataDir:  dataDir,
-		taskChan: make(chan *kmrpb.TaskInfo),
+		JobName: jobName,
+		Files:   inputFiles,
+		NReduce: nReduce,
+		DataDir: dataDir,
 	}
 
 	go func() {
