@@ -1,14 +1,16 @@
 package master
 
 import (
-	"golang.org/x/net/context"
 	"math/rand"
 	"net"
 	"sync"
 	"time"
 
+	"golang.org/x/net/context"
+
 	kmrpb "github.com/naturali/kmr/pb"
 	"github.com/naturali/kmr/util/log"
+	"k8s.io/client-go/kubernetes"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -49,9 +51,13 @@ type Master struct {
 	tasks     []*Task            // Holding all of tasks
 	heartbeat map[int64]chan int // Heartbeat channel for each worker
 
+	k8sclient *kubernetes.Clientset
+	namespace string
+
 	commitMappers []int64
 }
 
+// CheckHeartbeatForEachWorker
 // CheckHeartbeat keeps checking the heartbeat of each worker. It is either DEAD, PULSE, FINISH or losing signal of
 // heartbeat.
 // If the task is DEAD (occur error while the worker is doing the task) or cannot detect heartbeat in time. Master
@@ -207,12 +213,15 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 }
 
 // NewMapReduce creates a map-reduce job.
-func NewMapReduce(port string, jobName string, inputFiles []string, dataDir string, nReduce int) {
+func NewMapReduce(port string, jobName string, inputFiles []string, dataDir string,
+	nReduce int, k8sclient *kubernetes.Clientset, namespace string) {
 	master := &Master{
-		JobName: jobName,
-		Files:   inputFiles,
-		NReduce: nReduce,
-		DataDir: dataDir,
+		JobName:   jobName,
+		Files:     inputFiles,
+		NReduce:   nReduce,
+		DataDir:   dataDir,
+		k8sclient: k8sclient,
+		namespace: namespace,
 	}
 
 	go func() {
