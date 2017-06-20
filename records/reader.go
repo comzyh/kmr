@@ -3,6 +3,7 @@ package records
 import (
 	"bufio"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"os"
 
@@ -104,7 +105,7 @@ func NewTextStreamRecordReader(reader io.Reader) *SimpleRecordReader {
 func NewTextFileRecordReader(filename string) *SimpleRecordReader {
 	file, err := os.Open(filename)
 	if err != nil {
-		panic("fail to create file reader")
+		panic(fmt.Sprintf("fail to create file reader of '%s', %v", filename, err))
 	}
 	reader := bufio.NewReader(file)
 	preload := make(chan *Record, 1000)

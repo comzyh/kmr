@@ -4,8 +4,8 @@ import (
 	"flag"
 	"os"
 
-	"github.com/ceph/go-ceph/rados"
-	"github.com/naturali/NiServer/pkg/log"
+	records "github.com/naturali/kmr/records/adaptor"
+	"github.com/naturali/kmr/util/log"
 
 	"github.com/naturali/kmr/job"
 )
