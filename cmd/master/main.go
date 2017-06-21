@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -32,6 +34,7 @@ func main() {
 	// k8s client
 	var config *rest.Config
 	var clientset *kubernetes.Clientset
+
 	if *local == false {
 		k8sSchema := os.Getenv("KUBERNETES_API_SCHEMA")
 		if k8sSchema != "http" { // InCluster
@@ -59,6 +62,32 @@ func main() {
 		clientset = nil
 	}
 
-	master.NewMapReduce(*port, *jobName, strings.Split(*inputFile, ","), *dataDir,
-		*nReduce, clientset, *namespace)
+	var jobDescription master.JobDescription
+
+	if *configFile != "" {
+		raw, err := ioutil.ReadFile(*configFile)
+		if err != nil {
+			log.Fatalf("Can't read description file '%s': %v", *configFile, err)
+		}
+		err = json.Unmarshal(raw, &jobDescription)
+		if err != nil {
+			log.Fatalf("Can't parse description file: %v", err)
+		}
+		rebuiltJson, _ := json.Marshal(jobDescription)
+		fmt.Println("Job description:\n", string(rebuiltJson))
+	} else {
+		jobDescription = master.JobDescription{
+			MapBucket:    "fileSystem://" + *dataDir,
+			InterBucket:  "fileSystem://" + *dataDir,
+			ReduceBucket: "fileSystem://" + *dataDir,
+			Map: master.MapDescription{
+				Objects: strings.Split(*inputFile, ","),
+			},
+			Reduce: master.ReduceDescription{
+				NReduce: *nReduce,
+			},
+		}
+	}
+
+	master.NewMapReduce(*port, *jobName, jobDescription, clientset, *namespace, *local)
 }

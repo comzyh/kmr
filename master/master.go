@@ -42,10 +42,9 @@ type Task struct {
 type Master struct {
 	sync.Mutex
 
-	JobName string   // Name of currently executing job
-	DataDir string   // Directory of intermediate files
-	Files   []string // Input files
-	NReduce int      // Number of reduce partitions
+	JobName  string         // Name of currently executing job
+	JobDesc  JobDescription // Job description
+	LocalRun bool           // Is LocalRun
 
 	wg        sync.WaitGroup     // WaitGroup for waiting all of tasks finished on each phase
 	tasks     []*Task            // Holding all of tasks
@@ -114,9 +113,9 @@ func (master *Master) Schedule(phase string) {
 	var nTasks int
 	switch phase {
 	case mapPhase:
-		nTasks = len(master.Files)
+		nTasks = len(master.JobDesc.Map.Objects)
 	case reducePhase:
-		nTasks = master.NReduce
+		nTasks = master.JobDesc.Reduce.NReduce
 	}
 
 	master.Lock()
@@ -126,13 +125,13 @@ func (master *Master) Schedule(phase string) {
 		taskInfo := &kmrpb.TaskInfo{
 			JobName:         master.JobName,
 			Phase:           phase,
-			IntermediateDir: master.DataDir,
+			IntermediateDir: master.JobDesc.MapBucket[len("fileSystem://"):],
 			TaskID:          int32(i),
-			NReduce:         int32(master.NReduce),
-			NMap:            int32(len(master.Files)),
+			NReduce:         int32(master.JobDesc.Reduce.NReduce),
+			NMap:            int32(len(master.JobDesc.Map.Objects)),
 		}
 		if phase == mapPhase {
-			taskInfo.File = master.Files[i]
+			taskInfo.File = master.JobDesc.Map.Objects[i]
 		}
 		if phase == reducePhase {
 			taskInfo.CommitMappers = master.commitMappers
@@ -213,13 +212,12 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 }
 
 // NewMapReduce creates a map-reduce job.
-func NewMapReduce(port string, jobName string, inputFiles []string, dataDir string,
-	nReduce int, k8sclient *kubernetes.Clientset, namespace string) {
+func NewMapReduce(port string, jobName string, jobDesc JobDescription,
+	k8sclient *kubernetes.Clientset, namespace string, localRun bool) {
 	master := &Master{
 		JobName:   jobName,
-		Files:     inputFiles,
-		NReduce:   nReduce,
-		DataDir:   dataDir,
+		JobDesc:   jobDesc,
+		LocalRun:  localRun,
 		k8sclient: k8sclient,
 		namespace: namespace,
 	}
