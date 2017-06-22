@@ -92,9 +92,9 @@ func (master *Master) CheckHeartbeatForEachWorker(taskID int, workerID int64, he
 				if master.tasks[taskID].state != STATE_COMPLETED {
 					master.tasks[taskID].state = STATE_COMPLETED
 					master.tasks[taskID].commitWorker = workerID
+					master.wg.Done()
 				}
 				master.Unlock()
-				master.wg.Done()
 				return
 			case HEARTBEAT_CODE_PULSE:
 				continue

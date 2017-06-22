@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	FLUSH_SIZE = 10 * 1024 * 1024 // 80M
+	FLUSH_SIZE = 80 * 1024 * 1024 // 80M
 )
 
 var (
@@ -122,15 +122,15 @@ func (cw *ComputeWrap) Run() {
 func (cw *ComputeWrap) phaseSelector(jobName string, phase string, intermediateDir string, file string,
 	nMap int, nReduce int, taskID int, workerID int64,
 	commitMappers []int64) error {
+	bk, err := bucket.NewFilePool(intermediateDir + "/" + jobName)
+	if err != nil {
+		log.Fatalf("Fail to open bucket: %v", err)
+	}
 	switch phase {
 	case "map":
 		log.Infof("starting id%d mapper", taskID)
 
 		rr := records.MakeRecordReader("textfile", map[string]interface{}{"filename": file})
-		bk, err := bucket.NewFilePool(intermediateDir + "/" + jobName)
-		if err != nil {
-			log.Fatalf("Fail to open bucket: %v", err)
-		}
 		// Mapper
 		if err := cw.doMap(rr, bk, taskID, nReduce, workerID); err != nil {
 			log.Fatalf("Fail to Map: %v", err)
@@ -138,20 +138,16 @@ func (cw *ComputeWrap) phaseSelector(jobName string, phase string, intermediateD
 	case "reduce":
 		log.Infof("starting id%d reducer", nReduce)
 
-		bk, err := bucket.NewFilePool(intermediateDir + "/" + jobName)
-		if err != nil {
-			log.Fatalf("Fail to open bucket: %v", err)
-		}
 		// Reduce
-		res, err := cw.doReduce(bk, taskID, nMap, commitMappers)
+		outputFile := "res-" + strconv.Itoa(taskID) + ".t"
+		writer, err := bk.OpenWrite(outputFile)
 		if err != nil {
+			log.Fatalf("Failed to open intermediate: %v", err)
+		}
+		if err = cw.doReduce(bk, taskID, nMap, commitMappers, writer); err != nil {
 			log.Fatalf("Fail to Reduce: %v", err)
 		}
-		outputFile := intermediateDir + "/" + jobName + "/" + "res-" + strconv.Itoa(taskID) + ".t"
-		rw := records.MakeRecordWriter("file", map[string]interface{}{"filename": outputFile})
-		for _, r := range res {
-			rw.WriteRecord(KVToRecord(r))
-		}
+		writer.Close()
 	default:
 		panic("bad phase")
 	}
@@ -251,7 +247,7 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 }
 
 // doReduce does reduce operation
-func (cw *ComputeWrap) doReduce(bk bucket.Bucket, reduceID int, nMap int, commitMappers []int64) ([]*kmrpb.KV, error) {
+func (cw *ComputeWrap) doReduce(bk bucket.Bucket, reduceID int, nMap int, commitMappers []int64, writer records.RecordWriter) error {
 	startTime := time.Now()
 	readers := make([]records.RecordReader, 0)
 	for i := 0; i < nMap; i++ {
@@ -261,7 +257,6 @@ func (cw *ComputeWrap) doReduce(bk bucket.Bucket, reduceID int, nMap int, commit
 		}
 		readers = append(readers, reader)
 	}
-	outputRecords := make([]*kmrpb.KV, 0)
 	sorted := make(chan *records.Record, 1024)
 	go records.MergeSort(readers, sorted)
 	var lastKey []byte
@@ -273,7 +268,9 @@ func (cw *ComputeWrap) doReduce(bk bucket.Bucket, reduceID int, nMap int, commit
 		}
 		if lastKey != nil {
 			res, _ := cw.doReduceForSingleKey(lastKey, values)
-			outputRecords = append(outputRecords, res...)
+			for _, r := range res {
+				writer.WriteRecord(KVToRecord(r))
+			}
 		}
 		values = values[:0]
 		lastKey = r.Key
@@ -281,10 +278,12 @@ func (cw *ComputeWrap) doReduce(bk bucket.Bucket, reduceID int, nMap int, commit
 	}
 	if lastKey != nil {
 		res, _ := cw.doReduceForSingleKey(lastKey, values)
-		outputRecords = append(outputRecords, res...)
+		for _, r := range res {
+			writer.WriteRecord(KVToRecord(r))
+		}
 	}
 	log.Debug("DONE Reduce. Took:", time.Since(startTime))
-	return outputRecords, nil
+	return nil
 }
 
 func (cw *ComputeWrap) doReduceForSingleKey(key []byte, values [][]byte) ([]*kmrpb.KV, error) {
