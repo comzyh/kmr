@@ -1,6 +1,7 @@
 package master
 
 import (
+	"fmt"
 	"math/rand"
 	"net"
 	"sync"
@@ -111,11 +112,18 @@ func (master *Master) CheckHeartbeatForEachWorker(taskID int, workerID int64, he
 // Schedule pipes into tasks for the phase (map or reduce). It will return after all the tasks are finished.
 func (master *Master) Schedule(phase string) {
 	var nTasks int
+	var err error
 	switch phase {
 	case mapPhase:
 		nTasks = len(master.JobDesc.Map.Objects)
 	case reducePhase:
 		nTasks = master.JobDesc.Reduce.NReduce
+	}
+	if !master.LocalRun {
+		err = master.startWorker(phase)
+		if err != nil {
+			log.Fatalf("cant't start worker: %v", err)
+		}
 	}
 
 	master.Lock()
@@ -125,11 +133,12 @@ func (master *Master) Schedule(phase string) {
 		taskInfo := &kmrpb.TaskInfo{
 			JobName:         master.JobName,
 			Phase:           phase,
-			IntermediateDir: master.JobDesc.MapBucket[len("fileSystem://"):],
+			IntermediateDir: master.JobDesc.InterBucket[len("fileSystem://"):], // FIXME:
 			TaskID:          int32(i),
 			NReduce:         int32(master.JobDesc.Reduce.NReduce),
 			NMap:            int32(len(master.JobDesc.Map.Objects)),
 		}
+		fmt.Println(master.JobDesc.MapBucket[len("fileSystem://"):])
 		if phase == mapPhase {
 			taskInfo.File = master.JobDesc.Map.Objects[i]
 		}
@@ -145,6 +154,12 @@ func (master *Master) Schedule(phase string) {
 	master.wg.Add(nTasks)
 	master.Unlock()
 	master.wg.Wait()
+	if !master.LocalRun {
+		err = master.killWorkers()
+		if err != nil {
+			log.Fatalf("cant't kill worker: %v", err)
+		}
+	}
 
 	if phase == mapPhase {
 		master.commitMappers = make([]int64, 0)

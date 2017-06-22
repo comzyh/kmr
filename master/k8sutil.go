@@ -7,7 +7,7 @@ import (
 	v1beta1 "k8s.io/client-go/pkg/apis/extensions/v1beta1"
 )
 
-func (master *Master) generateReplicaSet(command []string, image string, replicas int32) (v1beta1.ReplicaSet, error) {
+func (master *Master) generateReplicaSet(command []string, image string, replicas int32) v1beta1.ReplicaSet {
 	podTemplate := v1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: master.JobName,
@@ -22,6 +22,22 @@ func (master *Master) generateReplicaSet(command []string, image string, replica
 					Name:    "kmr-worker",
 					Command: command,
 					Image:   image,
+					VolumeMounts: []v1.VolumeMount{
+						v1.VolumeMount{
+							Name:      "cephfs",
+							MountPath: "/cephfs",
+						},
+					},
+				},
+			},
+			Volumes: []v1.Volume{
+				v1.Volume{
+					Name: "cephfs",
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{
+							Path: "/mnt/cephfs",
+						},
+					},
 				},
 			},
 		},
@@ -40,5 +56,26 @@ func (master *Master) generateReplicaSet(command []string, image string, replica
 		},
 		Spec: rsSpec,
 	}
-	return replicaSet, nil
+	return replicaSet
+}
+
+func (master *Master) createReplicaSet(replicaSet *v1beta1.ReplicaSet) (*v1beta1.ReplicaSet, error) {
+	return master.k8sclient.ExtensionsV1beta1().
+		ReplicaSets(master.namespace).Create(replicaSet)
+}
+
+func (master *Master) startWorker(phase string) error {
+	var rs v1beta1.ReplicaSet
+	switch phase {
+	case mapPhase:
+		rs = master.generateReplicaSet(master.JobDesc.Map.commad, master.JobDesc.Map.Image, int32(master.JobDesc.Map.NWorker))
+	case reducePhase:
+		rs = master.generateReplicaSet(master.JobDesc.Reduce.commad, master.JobDesc.Map.Image, int32(master.JobDesc.Map.NWorker))
+	}
+	_, err := master.createReplicaSet(&rs)
+	return err
+}
+func (master *Master) killWorkers() error {
+	return master.k8sclient.ExtensionsV1beta1().ReplicaSets(master.namespace).
+		Delete(master.JobName, &metav1.DeleteOptions{})
 }
