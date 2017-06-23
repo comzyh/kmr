@@ -24,6 +24,12 @@ func (master *Master) generateReplicaSet(name string, command []string, image st
 					Name:    "kmr-worker",
 					Command: command,
 					Image:   image,
+					Env: []v1.EnvVar{
+						v1.EnvVar{
+							Name:  "KMR_MASTER_ADDRESS",
+							Value: fmt.Sprintf("%s%s", master.JobName, master.port),
+						},
+					},
 					VolumeMounts: []v1.VolumeMount{
 						v1.VolumeMount{
 							Name:      "cephfs",
@@ -75,10 +81,13 @@ func (master *Master) startWorker(phase string) error {
 	switch phase {
 	case mapPhase:
 		rs = master.generateReplicaSet(master.replicaSetName(phase, master.JobName),
-			master.JobDesc.Map.commad, master.JobDesc.Map.Image, int32(master.JobDesc.Map.NWorker))
+			master.JobDesc.Map.Command, master.JobDesc.Map.Image, int32(master.JobDesc.Map.NWorker))
 	case reducePhase:
 		rs = master.generateReplicaSet(master.replicaSetName(phase, master.JobName),
-			master.JobDesc.Reduce.commad, master.JobDesc.Map.Image, int32(master.JobDesc.Map.NWorker))
+			master.JobDesc.Reduce.Command, master.JobDesc.Reduce.Image, int32(master.JobDesc.Reduce.NWorker))
+	case mapreducePhase:
+		rs = master.generateReplicaSet(master.replicaSetName(phase, master.JobName),
+			master.JobDesc.Command, master.JobDesc.Image, int32(master.JobDesc.NWorker))
 	}
 	_, err := master.createReplicaSet(&rs)
 	return err

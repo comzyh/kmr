@@ -3,6 +3,7 @@ package executor
 import (
 	"bytes"
 	"flag"
+	"os"
 	"sort"
 	"strconv"
 	"sync"
@@ -51,6 +52,12 @@ func (cw *ComputeWrap) BindReducer(reducer func(kvs <-chan *kmrpb.KV) <-chan *km
 
 func (cw *ComputeWrap) Run() {
 	flag.Parse()
+
+	if os.Getenv("KMR_MASTER_ADDRESS") != "" {
+		addr := os.Getenv("KMR_MASTER_ADDRESS")
+		masterAddr = &addr
+	}
+
 	if *masterAddr == "" {
 		// Local Run
 		var taskID int

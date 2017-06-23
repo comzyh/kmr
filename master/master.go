@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	mapPhase    = "map"
-	reducePhase = "reduce"
+	mapPhase       = "map"
+	reducePhase    = "reduce"
+	mapreducePhase = "mr"
 
 	HEARTBEAT_CODE_PULSE  = 0
 	HEARTBEAT_CODE_DEAD   = 1
@@ -46,6 +47,7 @@ type Master struct {
 	JobName  string         // Name of currently executing job
 	JobDesc  JobDescription // Job description
 	LocalRun bool           // Is LocalRun
+	port     string         // Master listening port, like ":50051"
 
 	wg        sync.WaitGroup     // WaitGroup for waiting all of tasks finished on each phase
 	tasks     []*Task            // Holding all of tasks
@@ -112,18 +114,11 @@ func (master *Master) CheckHeartbeatForEachWorker(taskID int, workerID int64, he
 // Schedule pipes into tasks for the phase (map or reduce). It will return after all the tasks are finished.
 func (master *Master) Schedule(phase string) {
 	var nTasks int
-	var err error
 	switch phase {
 	case mapPhase:
 		nTasks = len(master.JobDesc.Map.Objects)
 	case reducePhase:
 		nTasks = master.JobDesc.Reduce.NReduce
-	}
-	if !master.LocalRun {
-		err = master.startWorker(phase)
-		if err != nil {
-			log.Fatalf("cant't start worker: %v", err)
-		}
 	}
 
 	master.Lock()
@@ -154,12 +149,6 @@ func (master *Master) Schedule(phase string) {
 	master.wg.Add(nTasks)
 	master.Unlock()
 	master.wg.Wait()
-	if !master.LocalRun {
-		err = master.killWorkers(phase)
-		if err != nil {
-			log.Fatalf("cant't kill worker: %v", err)
-		}
-	}
 
 	if phase == mapPhase {
 		master.commitMappers = make([]int64, 0)
@@ -235,6 +224,7 @@ func NewMapReduce(port string, jobName string, jobDesc JobDescription,
 		LocalRun:  localRun,
 		k8sclient: k8sclient,
 		namespace: namespace,
+		port:      port,
 	}
 
 	go func() {
@@ -252,9 +242,27 @@ func NewMapReduce(port string, jobName string, jobDesc JobDescription,
 	}()
 
 	startTime := time.Now()
+	var err error
+
+	if !master.LocalRun {
+		log.Debug("Starting workers")
+		err = master.startWorker("mr")
+		if err != nil {
+			log.Fatalf("cant't start worker: %v", err)
+		}
+	}
+
 	master.Schedule(mapPhase)
 	log.Debug("Map DONE")
 	master.Schedule(reducePhase)
 	log.Debug("Reduce DONE")
+
+	if !master.LocalRun {
+		err = master.killWorkers("mr")
+		if err != nil {
+			log.Fatalf("cant't kill worker: %v", err)
+		}
+	}
+
 	log.Debug("Finish", time.Since(startTime))
 }
