@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example-job-name
+  labels:
+    name: example-job-name
+spec:
+  containers:
+  - name: example-job-name
+    image: kmr
+    command: [ "go", "run", "/kmr/cmd/master/main.go", "-config", "" ]
+    ports:
+    - containerPort: 50051
+---
+kind: Service
+apiVersion: v1
+metadata:
+  labels:
+    app: example-job-name
+  name: example-job-name
+spec:
+  type: NodePort
+  ports:
+  - port: 50051
+    targetPort: 50051
+  selector:
+    name: example-job-name
