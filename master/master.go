@@ -155,7 +155,7 @@ func (master *Master) Schedule(phase string) {
 	master.Unlock()
 	master.wg.Wait()
 	if !master.LocalRun {
-		err = master.killWorkers()
+		err = master.killWorkers(phase)
 		if err != nil {
 			log.Fatalf("cant't kill worker: %v", err)
 		}
