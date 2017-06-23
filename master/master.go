@@ -43,10 +43,11 @@ type Task struct {
 type Master struct {
 	sync.Mutex
 
-	JobName  string         // Name of currently executing job
-	JobDesc  JobDescription // Job description
-	LocalRun bool           // Is LocalRun
-	port     string         // Master listening port, like ":50051"
+	JobName    string         // Name of currently executing job
+	JobDesc    JobDescription // Job description
+	LocalRun   bool           // Is LocalRun
+	port       string         // Master listening port, like ":50051"
+	ReaderType string         // Type of record reader for input files
 
 	wg        sync.WaitGroup     // WaitGroup for waiting all of tasks finished on each phase
 	tasks     []*Task            // Holding all of tasks
@@ -131,6 +132,7 @@ func (master *Master) Schedule(phase string) {
 			TaskID:          int32(i),
 			NReduce:         int32(master.JobDesc.Reduce.NReduce),
 			NMap:            int32(len(master.JobDesc.Map.Objects)),
+			ReaderType:      master.ReaderType,
 		}
 		fmt.Println(master.JobDesc.MapBucket[len("fileSystem://"):])
 		if phase == mapPhase {
@@ -216,14 +218,15 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 
 // NewMapReduce creates a map-reduce job.
 func NewMapReduce(port string, jobName string, jobDesc JobDescription,
-	k8sclient *kubernetes.Clientset, namespace string, localRun bool) {
+	k8sclient *kubernetes.Clientset, namespace string, localRun bool, readerType string) {
 	master := &Master{
-		JobName:   jobName,
-		JobDesc:   jobDesc,
-		LocalRun:  localRun,
-		k8sclient: k8sclient,
-		namespace: namespace,
-		port:      port,
+		JobName:    jobName,
+		JobDesc:    jobDesc,
+		LocalRun:   localRun,
+		k8sclient:  k8sclient,
+		namespace:  namespace,
+		port:       port,
+		ReaderType: readerType,
 	}
 
 	go func() {
