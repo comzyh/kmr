@@ -2,6 +2,7 @@ kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
   name: kmr-master
+  namespace: kmr
 rules:
   - apiGroups:
       - ""
@@ -27,3 +28,4 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: kmr-master
+  namespace: kmr
