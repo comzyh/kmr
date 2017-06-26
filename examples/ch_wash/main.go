@@ -9,27 +9,36 @@ import (
 	kmrpb "github.com/naturali/kmr/pb"
 )
 
-var (
-	WASHER_SPLIT_PATTERN = `,|\.|!|\?|，|。|！|？|:|：|;|；|「|」|．|\t|：…｛｝`
-	WASHER_IGNORE_PUNCTS = " 　'\"《》‘’“”・-_<>〃〈〉()（）……@、【】[]*-、『』~"
-
-	ignorePuncts map[rune]bool
+const (
+	WasherSplitPuncts  = `,|\.|!|\?|，|。|！|？|:|：|;|；|「|」|．|\t|：…｛｝`
+	WasherIgnorePuncts = " 　'\"《》‘’“”・-_<>〃〈〉()（）……@、【】[]*-、『』~"
 )
 
-func is_alpha_or_number(r rune) bool {
+var (
+	ignorePuncts map[rune]bool
+	splitPuncts  map[rune]bool
+)
+
+func isAlphaOrNumber(r rune) bool {
 	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || unicode.IsDigit(r)
 }
 
-func is_chinese(r rune) bool {
+func isChinese(r rune) bool {
 	return r >= '\u4e00' && r <= '\u9fa5'
 }
 
-func is_ignore_puncts(r rune) bool {
-	if _, ok := ignorePuncts[r]; ok {
+func isIgnorePuncts(r rune) bool {
+	_, ok := ignorePuncts[r]
+	return ok
+}
+
+func isSplitPuncts(r rune) bool {
+	if _, ok := splitPuncts[r]; ok {
 		return true
 	}
 	return false
 }
+
 func remove_illegal_pattern(line string) string {
 	if strings.HasPrefix(line, "<docno>") || strings.HasSuffix(line, "<url>") {
 		return ""
@@ -41,21 +50,32 @@ func remove_illegal_pattern(line string) string {
 }
 
 func process_single_sentence(line string) []string {
+	outputs := make([]string, 0)
+
 	out := make([]string, 0)
 	e_word := ""
 	for _, r := range line {
-		if is_ignore_puncts(r) {
+		if isSplitPuncts(r) {
 			if len(e_word) > 0 {
 				out = append(out, e_word)
 				e_word = ""
 			}
-		} else if is_chinese(r) {
+			if len(out) > 0 {
+				outputs = append(outputs, strings.Join(out, " "))
+			}
+			out = out[:0]
+		} else if isIgnorePuncts(r) {
+			if len(e_word) > 0 {
+				out = append(out, e_word)
+				e_word = ""
+			}
+		} else if isChinese(r) {
 			if len(e_word) > 0 {
 				out = append(out, e_word)
 				e_word = ""
 			}
 			out = append(out, string(r))
-		} else if is_alpha_or_number(r) {
+		} else if isAlphaOrNumber(r) {
 			e_word += string(r)
 		} else {
 			return nil
@@ -64,20 +84,19 @@ func process_single_sentence(line string) []string {
 	if len(e_word) > 0 {
 		out = append(out, e_word)
 	}
-	return out
+	if len(out) > 0 {
+		outputs = append(outputs, strings.Join(out, " "))
+	}
+	return outputs
 }
 
 func Map(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV {
-	re, _ := regexp.Compile(WASHER_SPLIT_PATTERN)
 	out := make(chan *kmrpb.KV, 1024)
 	go func() {
 		for kv := range kvs {
 			sentence := remove_illegal_pattern(strings.Trim(string(kv.Value), "\n"))
-			for _, st := range re.Split(sentence, -1) {
-				procceed := strings.Join(process_single_sentence(st), " ")
-				if len(procceed) > 0 {
-					out <- &kmrpb.KV{Key: []byte(procceed), Value: []byte{1}}
-				}
+			for _, procceed := range process_single_sentence(sentence) {
+				out <- &kmrpb.KV{Key: []byte(procceed), Value: []byte{1}}
 			}
 		}
 		close(out)
@@ -105,8 +124,12 @@ func Reduce(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV {
 
 func main() {
 	ignorePuncts = make(map[rune]bool)
-	for _, r := range WASHER_IGNORE_PUNCTS {
+	splitPuncts = make(map[rune]bool)
+	for _, r := range WasherIgnorePuncts {
 		ignorePuncts[r] = true
+	}
+	for _, r := range WasherSplitPuncts {
+		splitPuncts[r] = true
 	}
 
 	cw := &executor.ComputeWrap{}
