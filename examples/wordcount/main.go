@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"strconv"
 	"strings"
 	"unicode"
@@ -27,15 +28,21 @@ func Map(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV {
 func Reduce(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV {
 	out := make(chan *kmrpb.KV, 1024)
 	go func() {
+		var key []byte
 		count := 0
-		word := ""
 		for kv := range kvs {
-			if count == 0 {
-				word = string(kv.Key)
+			if !bytes.Equal(key, kv.Key) {
+				if key != nil {
+					out <- &kmrpb.KV{Key: key, Value: []byte(strconv.Itoa(count))}
+				}
+				key = kv.Key
+				count = 0
 			}
 			count += 1
 		}
-		out <- &kmrpb.KV{Key: []byte(word), Value: []byte(strconv.Itoa(count))}
+		if key != nil {
+			out <- &kmrpb.KV{Key: key, Value: []byte(strconv.Itoa(count))}
+		}
 		close(out)
 	}()
 	return out
