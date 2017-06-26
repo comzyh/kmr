@@ -25,6 +25,7 @@ var (
 	local      = flag.Bool("local", false, "Wheter use local run")
 	namespace  = flag.String("namespace", "kmr", "kubernetes namespace to run KMR task")
 	configFile = flag.String("config", "", "MapReduce Job description JSON file, should be http(s) URL or a filepath")
+	readerType = flag.String("reader-type", "textfile", "type of record reader for input files")
 )
 
 func main() {
@@ -89,5 +90,5 @@ func main() {
 		}
 	}
 
-	master.NewMapReduce(*port, *jobName, jobDescription, clientset, *namespace, *local)
+	master.NewMapReduce(*port, *jobName, jobDescription, clientset, *namespace, *local, *readerType)
 }

@@ -2,6 +2,7 @@ package records
 
 import (
 	"bufio"
+	"compress/bzip2"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -117,6 +118,20 @@ func NewTextFileRecordReader(filename string) *SimpleRecordReader {
 	}
 }
 
+func NewBz2FileRecordReader(filename string) *SimpleRecordReader {
+	file, err := os.Open(filename)
+	if err != nil {
+		panic("fail to create file reader")
+	}
+	reader := bzip2.NewReader(bufio.NewReader(file))
+	preload := make(chan *Record, 1000)
+	feedTextStream(preload, reader)
+
+	return &SimpleRecordReader{
+		input: preload,
+	}
+}
+
 func NewMemoryRecordReader(records []*Record) *SimpleRecordReader {
 	preload := make(chan *Record, 1000)
 	go func() {
@@ -174,6 +189,8 @@ func MakeRecordReader(name string, params map[string]interface{}) RecordReader {
 	switch name {
 	case "textfile":
 		return NewTextFileRecordReader(params["filename"].(string))
+	case "bz2":
+		return NewBz2FileRecordReader(params["filename"].(string))
 	case "file":
 		return NewFileRecordReader(params["filename"].(string))
 	case "stream":

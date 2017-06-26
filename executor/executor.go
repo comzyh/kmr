@@ -25,14 +25,15 @@ const (
 )
 
 var (
-	jobName   = flag.String("jobname", "wc", "jobName")
-	inputFile = flag.String("file", "", "input file path")
-	dataDir   = flag.String("intermediate-dir", "/tmp/", "directory of intermediate files")
-	phase     = flag.String("phase", "", "map or reduce")
-	nMap      = flag.Int("nMap", 1, "number of mappers")
-	nReduce   = flag.Int("nReduce", 1, "number of reducers")
-	mapID     = flag.Int("mapID", 0, "mapper id")
-	reduceID  = flag.Int("reduceID", 0, "reducer id")
+	jobName    = flag.String("jobname", "wc", "jobName")
+	inputFile  = flag.String("file", "", "input file path")
+	dataDir    = flag.String("intermediate-dir", "/tmp/", "directory of intermediate files")
+	phase      = flag.String("phase", "", "map or reduce")
+	nMap       = flag.Int("nMap", 1, "number of mappers")
+	nReduce    = flag.Int("nReduce", 1, "number of reducers")
+	mapID      = flag.Int("mapID", 0, "mapper id")
+	reduceID   = flag.Int("reduceID", 0, "reducer id")
+	readerType = flag.String("reader-type", "textfile", "type of record reader for input files")
 
 	masterAddr = flag.String("master-addr", "", "the address of master")
 )
@@ -67,7 +68,7 @@ func (cw *ComputeWrap) Run() {
 		case "reduce":
 			taskID = *reduceID
 		}
-		err := cw.phaseSelector(*jobName, *phase, *dataDir, *inputFile, *nMap, *nReduce, taskID, 0, make([]int64, *nMap))
+		err := cw.phaseSelector(*jobName, *phase, *dataDir, *inputFile, *nMap, *nReduce, *readerType, taskID, 0, make([]int64, *nMap))
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -90,7 +91,7 @@ func (cw *ComputeWrap) Run() {
 				continue
 			}
 			taskInfo := task.Taskinfo
-			timer := time.NewTimer(master.HEARTBEAT_TIMEOUT / 2)
+			timer := time.NewTicker(master.HEARTBEAT_TIMEOUT / 2)
 			go func() {
 				for range timer.C {
 					// SendHeartBeat
@@ -104,7 +105,7 @@ func (cw *ComputeWrap) Run() {
 				}
 			}()
 			err = cw.phaseSelector(taskInfo.JobName, taskInfo.Phase, taskInfo.IntermediateDir, taskInfo.File,
-				int(taskInfo.NMap), int(taskInfo.NReduce), int(taskInfo.TaskID), task.WorkerID, taskInfo.CommitMappers)
+				int(taskInfo.NMap), int(taskInfo.NReduce), taskInfo.ReaderType, int(taskInfo.TaskID), task.WorkerID, taskInfo.CommitMappers)
 			retcode = kmrpb.ReportInfo_FINISH
 			if err != nil {
 				log.Debug(err)
@@ -127,7 +128,7 @@ func (cw *ComputeWrap) Run() {
 }
 
 func (cw *ComputeWrap) phaseSelector(jobName string, phase string, intermediateDir string, file string,
-	nMap int, nReduce int, taskID int, workerID int64,
+	nMap int, nReduce int, readerType string, taskID int, workerID int64,
 	commitMappers []int64) error {
 	bk, err := bucket.NewFilePool(intermediateDir + "/" + jobName)
 	if err != nil {
@@ -137,7 +138,7 @@ func (cw *ComputeWrap) phaseSelector(jobName string, phase string, intermediateD
 	case "map":
 		log.Infof("starting id%d mapper", taskID)
 
-		rr := records.MakeRecordReader("textfile", map[string]interface{}{"filename": file})
+		rr := records.MakeRecordReader(readerType, map[string]interface{}{"filename": file})
 		// Mapper
 		if err := cw.doMap(rr, bk, taskID, nReduce, workerID); err != nil {
 			log.Fatalf("Fail to Map: %v", err)
@@ -242,7 +243,6 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 	}
 	for r := range sorted {
 		rBucketID := util.HashBytesKey(r.Key) % nReduce
-		_ = rBucketID
 		writers[rBucketID].WriteRecord(r)
 	}
 	for i := 0; i < nReduce; i++ {
