@@ -1,0 +1,31 @@
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: kmr-master
+  namespace: kmr
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - services
+      - pods
+      - pods/log
+    verbs: ["*"]
+  - apiGroups:
+      - extensions
+    resources:
+      - replicasets
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: kmr-master
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kmr-master
+subjects:
+- kind: ServiceAccount
+  name: kmr-master
+  namespace: kmr
