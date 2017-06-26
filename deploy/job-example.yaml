@@ -5,12 +5,20 @@ metadata:
   labels:
     name: example-job-name
 spec:
+  serviceAccountName: kmr-master
   containers:
   - name: example-job-name
     image: kmr
-    command: [ "go", "run", "/kmr/cmd/master/main.go", "-config", "" ]
+    command: [ "go", "run", "/go/src/github.com/naturali/kmr/cmd/master/main.go", "-config", "config-file", "-jobname", "example-job-name"]
     ports:
     - containerPort: 50051
+    volumeMounts:
+    - name: cephfs
+      mountPath: /cephfs
+  volumes:
+  - name: 'cephfs'
+    hostPath:
+      path: /mnt/cephfs
 ---
 kind: Service
 apiVersion: v1
@@ -25,3 +33,4 @@ spec:
     targetPort: 50051
   selector:
     name: example-job-name
+
