@@ -266,53 +266,24 @@ func (cw *ComputeWrap) doReduce(bk bucket.Bucket, reduceID int, nMap int, commit
 	}
 	sorted := make(chan *records.Record, 1024)
 	go records.MergeSort(readers, sorted)
-	var lastKey []byte
-	values := make([][]byte, 0)
-	for r := range sorted {
-		if bytes.Equal(lastKey, r.Key) {
-			values = append(values, r.Value)
-			continue
-		}
-		if lastKey != nil {
-			res, _ := cw.doReduceForSingleKey(lastKey, values)
-			for _, r := range res {
-				writer.WriteRecord(KVToRecord(r))
-			}
-		}
-		values = values[:0]
-		lastKey = r.Key
-		values = append(values, r.Key)
-	}
-	if lastKey != nil {
-		res, _ := cw.doReduceForSingleKey(lastKey, values)
-		for _, r := range res {
+
+	inputs := make(chan *kmrpb.KV, 1024)
+	outputs := cw.reduceFunc(inputs)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func(outputs <-chan *kmrpb.KV) {
+		for r := range outputs {
 			writer.WriteRecord(KVToRecord(r))
 		}
+		wg.Done()
+	}(outputs)
+	for r := range sorted {
+		inputs <- RecordToKV(r)
 	}
+	close(inputs)
+	wg.Wait()
 	log.Debug("DONE Reduce. Took:", time.Since(startTime))
 	return nil
-}
-
-func (cw *ComputeWrap) doReduceForSingleKey(key []byte, values [][]byte) ([]*kmrpb.KV, error) {
-	waitc := make(chan struct{})
-	inputKV := make(chan *kmrpb.KV, 1024)
-	outputKV := cw.reduceFunc(inputKV)
-	ret := make([]*kmrpb.KV, 0)
-	go func() {
-		for in := range outputKV {
-			ret = append(ret, in)
-		}
-		close(waitc)
-	}()
-	for _, v := range values {
-		inputKV <- &kmrpb.KV{
-			Key:   key,
-			Value: v,
-		}
-	}
-	close(inputKV)
-	<-waitc
-	return ret, nil
 }
 
 // RecordToKV converts an Record to a kmrpb.KV
