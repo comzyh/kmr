@@ -9,7 +9,7 @@ import (
 	v1beta1 "k8s.io/client-go/pkg/apis/extensions/v1beta1"
 )
 
-func (master *Master) generateReplicaSet(name string, command []string, image string, replicas int32) v1beta1.ReplicaSet {
+func (master *Master) newReplicaSet(name string, command []string, image string, replicas int32) v1beta1.ReplicaSet {
 	podTemplate := v1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
@@ -80,13 +80,13 @@ func (master *Master) startWorker(phase string) error {
 	var rs v1beta1.ReplicaSet
 	switch phase {
 	case mapPhase:
-		rs = master.generateReplicaSet(master.replicaSetName(phase, master.JobName),
+		rs = master.newReplicaSet(master.replicaSetName(phase, master.JobName),
 			master.JobDesc.Map.Command, master.JobDesc.Map.Image, int32(master.JobDesc.Map.NWorker))
 	case reducePhase:
-		rs = master.generateReplicaSet(master.replicaSetName(phase, master.JobName),
+		rs = master.newReplicaSet(master.replicaSetName(phase, master.JobName),
 			master.JobDesc.Reduce.Command, master.JobDesc.Reduce.Image, int32(master.JobDesc.Reduce.NWorker))
 	case mapreducePhase:
-		rs = master.generateReplicaSet(master.replicaSetName(phase, master.JobName),
+		rs = master.newReplicaSet(master.replicaSetName(phase, master.JobName),
 			master.JobDesc.Command, master.JobDesc.Image, int32(master.JobDesc.NWorker))
 	}
 	_, err := master.createReplicaSet(&rs)

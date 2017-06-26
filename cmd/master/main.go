@@ -10,10 +10,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/naturali/kmr/master"
+
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-
-	"github.com/naturali/kmr/master"
 )
 
 var (

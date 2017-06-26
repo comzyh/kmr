@@ -7,14 +7,13 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/context"
-
 	kmrpb "github.com/naturali/kmr/pb"
 	"github.com/naturali/kmr/util/log"
-	"k8s.io/client-go/kubernetes"
 
+	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
+	"k8s.io/client-go/kubernetes"
 )
 
 const (
