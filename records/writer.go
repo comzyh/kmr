@@ -1,8 +1,10 @@
 package records
 
 import (
-	"io"
+	"bufio"
 	"os"
+
+	"github.com/naturali/kmr/bucket"
 )
 
 type RecordWriter interface {
@@ -13,17 +15,31 @@ type RecordWriter interface {
 }
 
 type SimpleRecordWriter struct {
-	writer io.Writer
-}
-
-func (srw *SimpleRecordWriter) WriteRecord(record *Record) error {
-	return WriteRecord(srw.writer, record)
+	writer    bucket.ObjectWriter
+	bufWriter *bufio.Writer
 }
 
 func NewConsoleRecordWriter() *SimpleRecordWriter {
 	return &SimpleRecordWriter{
 		writer: os.Stdout,
 	}
+}
+
+func (srw *SimpleRecordWriter) Write(p []byte) (int, error) {
+	return srw.bufWriter.Write(p)
+}
+
+func (srw *SimpleRecordWriter) Flush() error {
+	return srw.bufWriter.Flush()
+}
+
+func (srw *SimpleRecordWriter) Close() error {
+	srw.Flush()
+	return srw.writer.Close()
+}
+
+func (srw *SimpleRecordWriter) WriteRecord(record *Record) error {
+	return WriteRecord(srw.bufWriter, record)
 }
 
 func NewFileRecordWriter(filename string) *SimpleRecordWriter {
@@ -34,16 +50,18 @@ func NewFileRecordWriter(filename string) *SimpleRecordWriter {
 	}
 
 	return &SimpleRecordWriter{
-		writer: file,
+		writer:    file,
+		bufWriter: bufio.NewWriter(file),
 	}
 }
-func NewStreamRecordWriter(writer io.Writer) *SimpleRecordWriter {
+func NewStreamRecordWriter(writer bucket.ObjectWriter) *SimpleRecordWriter {
 	return &SimpleRecordWriter{
-		writer: writer,
+		writer:    writer,
+		bufWriter: bufio.NewWriter(writer),
 	}
 }
 
-func MakeRecordWriter(name string, params map[string]interface{}) *SimpleRecordWriter {
+func MakeRecordWriter(name string, params map[string]interface{}) RecordWriter {
 	// TODO: registry
 	// noway to instance directly by type name in Golang
 	switch name {
@@ -52,7 +70,7 @@ func MakeRecordWriter(name string, params map[string]interface{}) *SimpleRecordW
 	case "console":
 		return NewConsoleRecordWriter()
 	case "stream":
-		return NewStreamRecordWriter(params["writer"].(io.Writer))
+		return NewStreamRecordWriter(params["writer"].(bucket.ObjectWriter))
 	default:
 		return NewConsoleRecordWriter()
 

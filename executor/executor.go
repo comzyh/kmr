@@ -130,19 +130,24 @@ func (cw *ComputeWrap) Run() {
 func (cw *ComputeWrap) phaseSelector(jobName string, phase string, intermediateDir string, file string,
 	nMap int, nReduce int, readerType string, taskID int, workerID int64,
 	commitMappers []int64) error {
-	bk, err := bucket.NewFilePool(intermediateDir + "/" + jobName)
+	bk, err := bucket.NewFSBucket(intermediateDir + "/" + jobName)
 	if err != nil {
 		log.Fatalf("Fail to open bucket: %v", err)
 	}
 	switch phase {
 	case "map":
 		log.Infof("starting id%d mapper", taskID)
-
-		rr := records.MakeRecordReader(readerType, map[string]interface{}{"filename": file})
+		mapBk, _ := bucket.NewFSBucket("/")
+		reader, err := mapBk.OpenRead(file)
+		if err != nil {
+			log.Fatalf("Fail to open object %s: %v", file, err)
+		}
+		recordReader := records.MakeRecordReader(readerType, map[string]interface{}{"reader": reader})
 		// Mapper
-		if err := cw.doMap(rr, bk, taskID, nReduce, workerID); err != nil {
+		if err := cw.doMap(recordReader, bk, taskID, nReduce, workerID); err != nil {
 			log.Fatalf("Fail to Map: %v", err)
 		}
+		reader.Close()
 	case "reduce":
 		log.Infof("starting id%d reducer", nReduce)
 
@@ -152,7 +157,8 @@ func (cw *ComputeWrap) phaseSelector(jobName string, phase string, intermediateD
 		if err != nil {
 			log.Fatalf("Failed to open intermediate: %v", err)
 		}
-		if err = cw.doReduce(bk, taskID, nMap, commitMappers, writer); err != nil {
+		recordWriter := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
+		if err = cw.doReduce(bk, taskID, nMap, commitMappers, recordWriter); err != nil {
 			log.Fatalf("Fail to Reduce: %v", err)
 		}
 		writer.Close()
@@ -185,6 +191,7 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 				waitFlushWrite.Add(1)
 				go func(filename string, data []*records.Record) {
 					writer, err := bk.OpenWrite(filename)
+					recordWriter := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
 					if err != nil {
 						log.Fatal(err)
 					}
@@ -192,11 +199,11 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 						return bytes.Compare(data[i].Key, data[j].Key) < 0
 					})
 					for _, r := range data {
-						if err := writer.WriteRecord(r); err != nil {
+						if err := recordWriter.WriteRecord(r); err != nil {
 							log.Fatal(err)
 						}
 					}
-					if err := writer.Close(); err != nil {
+					if err := recordWriter.Close(); err != nil {
 						log.Fatal(err)
 					}
 					waitFlushWrite.Done()
@@ -226,7 +233,8 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 		if err != nil {
 			log.Fatalf("Failed to open intermediate: %v", err)
 		}
-		readers = append(readers, reader)
+		recordReader := records.MakeRecordReader("stream", map[string]interface{}{"reader": reader})
+		readers = append(readers, recordReader)
 	}
 	readers = append(readers, records.MakeRecordReader("memory", map[string]interface{}{"data": aggregated}))
 	sorted := make(chan *records.Record, 1024)
@@ -236,14 +244,22 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 	for i := 0; i < nReduce; i++ {
 		intermediateFileName := bucket.IntermediateFileName(mapID, i, workerID)
 		writer, err := bk.OpenWrite(intermediateFileName)
+		recordWriter := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
 		if err != nil {
 			log.Fatalf("Failed to open intermediate: %v", err)
 		}
-		writers = append(writers, writer)
+		writers = append(writers, recordWriter)
 	}
 	for r := range sorted {
 		rBucketID := util.HashBytesKey(r.Key) % nReduce
 		writers[rBucketID].WriteRecord(r)
+	}
+	// Delete flushOutFiles
+	for _, reader := range readers {
+		reader.Close()
+	}
+	for _, file := range flushOutFiles {
+		bk.Delete(file)
 	}
 	for i := 0; i < nReduce; i++ {
 		writers[i].Close()
@@ -259,10 +275,11 @@ func (cw *ComputeWrap) doReduce(bk bucket.Bucket, reduceID int, nMap int, commit
 	readers := make([]records.RecordReader, 0)
 	for i := 0; i < nMap; i++ {
 		reader, err := bk.OpenRead(bucket.IntermediateFileName(i, reduceID, commitMappers[i]))
+		recordReader := records.NewStreamRecordReader(reader)
 		if err != nil {
 			log.Fatalf("Failed to open intermediate: %v", err)
 		}
-		readers = append(readers, reader)
+		readers = append(readers, recordReader)
 	}
 	sorted := make(chan *records.Record, 1024)
 	go records.MergeSort(readers, sorted)
