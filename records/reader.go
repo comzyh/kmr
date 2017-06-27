@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/naturali/kmr/bucket"
 	"github.com/naturali/kmr/util/log"
 )
 
@@ -19,8 +20,9 @@ type RecordReader interface {
 }
 
 type SimpleRecordReader struct {
-	input <-chan *Record
-	first *Record
+	input  <-chan *Record
+	first  *Record
+	reader bucket.ObjectReader
 }
 
 func NewSimpleRecordReader(input <-chan *Record) *SimpleRecordReader {
@@ -54,6 +56,9 @@ func (srr *SimpleRecordReader) HasNext() bool {
 }
 
 func (srr *SimpleRecordReader) Close() error {
+	if srr.reader != nil {
+		return srr.reader.Close()
+	}
 	return nil
 }
 
@@ -83,23 +88,25 @@ func NewFileRecordReader(filename string) *SimpleRecordReader {
 	}
 }
 
-func NewStreamRecordReader(reader io.Reader) *SimpleRecordReader {
+func NewStreamRecordReader(reader bucket.ObjectReader) *SimpleRecordReader {
 	preload := make(chan *Record, 1000)
 
 	feedStream(preload, reader)
 
 	return &SimpleRecordReader{
-		input: preload,
+		input:  preload,
+		reader: reader,
 	}
 }
 
-func NewTextStreamRecordReader(reader io.Reader) *SimpleRecordReader {
+func NewTextStreamRecordReader(reader bucket.ObjectReader) *SimpleRecordReader {
 	preload := make(chan *Record, 1000)
 
 	feedTextStream(preload, reader)
 
 	return &SimpleRecordReader{
-		input: preload,
+		input:  preload,
+		reader: reader,
 	}
 }
 
@@ -114,21 +121,19 @@ func NewTextFileRecordReader(filename string) *SimpleRecordReader {
 	feedTextStream(preload, reader)
 
 	return &SimpleRecordReader{
-		input: preload,
+		input:  preload,
+		reader: file,
 	}
 }
 
-func NewBz2FileRecordReader(filename string) *SimpleRecordReader {
-	file, err := os.Open(filename)
-	if err != nil {
-		panic("fail to create file reader")
-	}
-	reader := bzip2.NewReader(bufio.NewReader(file))
+func NewBz2RecordReader(reader bucket.ObjectReader) *SimpleRecordReader {
+	bzreader := bzip2.NewReader(bufio.NewReader(reader))
 	preload := make(chan *Record, 1000)
-	feedTextStream(preload, reader)
+	feedTextStream(preload, bzreader)
 
 	return &SimpleRecordReader{
-		input: preload,
+		input:  preload,
+		reader: reader,
 	}
 }
 
@@ -190,13 +195,13 @@ func MakeRecordReader(name string, params map[string]interface{}) RecordReader {
 	case "textfile":
 		return NewTextFileRecordReader(params["filename"].(string))
 	case "bz2":
-		return NewBz2FileRecordReader(params["filename"].(string))
+		return NewBz2RecordReader(params["reader"].(bucket.ObjectReader))
 	case "file":
 		return NewFileRecordReader(params["filename"].(string))
 	case "stream":
-		return NewStreamRecordReader(params["reader"].(io.Reader))
+		return NewStreamRecordReader(params["reader"].(bucket.ObjectReader))
 	case "textstream":
-		return NewTextStreamRecordReader(params["reader"].(io.Reader))
+		return NewTextStreamRecordReader(params["reader"].(bucket.ObjectReader))
 	case "memory":
 		return NewMemoryRecordReader(params["data"].([]*Record))
 	case "console":
