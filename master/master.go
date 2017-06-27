@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"os"
 	"sync"
 	"time"
 
 	kmrpb "github.com/naturali/kmr/pb"
+	"github.com/naturali/kmr/util"
 	"github.com/naturali/kmr/util/log"
 
 	"golang.org/x/net/context"
@@ -43,11 +45,10 @@ type Task struct {
 type Master struct {
 	sync.Mutex
 
-	JobName    string         // Name of currently executing job
-	JobDesc    JobDescription // Job description
-	LocalRun   bool           // Is LocalRun
-	port       string         // Master listening port, like ":50051"
-	ReaderType string         // Type of record reader for input files
+	JobName  string         // Name of currently executing job
+	JobDesc  JobDescription // Job description
+	LocalRun bool           // Is LocalRun
+	port     string         // Master listening port, like ":50051"
 
 	wg        sync.WaitGroup     // WaitGroup for waiting all of tasks finished on each phase
 	tasks     []*Task            // Holding all of tasks
@@ -56,7 +57,10 @@ type Master struct {
 	k8sclient *kubernetes.Clientset
 	namespace string
 
+	currentPhase  string
 	commitMappers []int64
+
+	checkpointFile *os.File
 }
 
 // CheckHeartbeatForEachWorker
@@ -100,6 +104,7 @@ func (master *Master) CheckHeartbeatForEachWorker(taskID int, workerID int64, he
 				if master.tasks[taskID].state != STATE_COMPLETED {
 					master.tasks[taskID].state = STATE_COMPLETED
 					master.tasks[taskID].commitWorker = workerID
+					util.AppendCheckPoint(master.checkpointFile, master.currentPhase, taskID, workerID)
 					master.wg.Done()
 				}
 				master.Unlock()
@@ -112,7 +117,7 @@ func (master *Master) CheckHeartbeatForEachWorker(taskID int, workerID int64, he
 }
 
 // Schedule pipes into tasks for the phase (map or reduce). It will return after all the tasks are finished.
-func (master *Master) Schedule(phase string) {
+func (master *Master) Schedule(phase string, ck *util.MapReduceCheckPoint) {
 	var nTasks int
 	switch phase {
 	case mapPhase:
@@ -124,6 +129,7 @@ func (master *Master) Schedule(phase string) {
 	master.Lock()
 	master.tasks = make([]*Task, nTasks)
 	master.heartbeat = make(map[int64]chan int)
+	master.currentPhase = phase
 	for i := 0; i < nTasks; i++ {
 		taskInfo := &kmrpb.TaskInfo{
 			JobName:         master.JobName,
@@ -132,7 +138,7 @@ func (master *Master) Schedule(phase string) {
 			TaskID:          int32(i),
 			NReduce:         int32(master.JobDesc.Reduce.NReduce),
 			NMap:            int32(len(master.JobDesc.Map.Objects)),
-			ReaderType:      master.ReaderType,
+			ReaderType:      master.JobDesc.Map.ReaderType,
 		}
 		fmt.Println(master.JobDesc.MapBucket[len("fileSystem://"):])
 		if phase == mapPhase {
@@ -148,6 +154,23 @@ func (master *Master) Schedule(phase string) {
 		}
 	}
 	master.wg.Add(nTasks)
+	if ck != nil {
+		switch phase {
+		case mapPhase:
+			for _, desc := range ck.CompletedMaps {
+				master.tasks[desc.TaskID].state = STATE_COMPLETED
+				master.tasks[desc.TaskID].commitWorker = desc.CommitWorker
+				util.AppendCheckPoint(master.checkpointFile, phase, desc.TaskID, desc.CommitWorker)
+				master.wg.Done()
+			}
+		case reducePhase:
+			for _, desc := range ck.CompletedReduces {
+				master.tasks[desc.TaskID].state = STATE_COMPLETED
+				util.AppendCheckPoint(master.checkpointFile, phase, desc.TaskID, desc.CommitWorker)
+				master.wg.Done()
+			}
+		}
+	}
 	master.Unlock()
 	master.wg.Wait()
 
@@ -218,15 +241,21 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 
 // NewMapReduce creates a map-reduce job.
 func NewMapReduce(port string, jobName string, jobDesc JobDescription,
-	k8sclient *kubernetes.Clientset, namespace string, localRun bool, readerType string) {
+	k8sclient *kubernetes.Clientset, namespace string, localRun bool, ck *util.MapReduceCheckPoint) {
+	ckFile, err := os.Create(fmt.Sprintf("%s.ck", jobName))
+	if err != nil {
+		log.Fatalf("Can't create checkpoint file: %v", err)
+	}
+	defer ckFile.Close()
+
 	master := &Master{
-		JobName:    jobName,
-		JobDesc:    jobDesc,
-		LocalRun:   localRun,
-		k8sclient:  k8sclient,
-		namespace:  namespace,
-		port:       port,
-		ReaderType: readerType,
+		JobName:        jobName,
+		JobDesc:        jobDesc,
+		LocalRun:       localRun,
+		k8sclient:      k8sclient,
+		namespace:      namespace,
+		port:           port,
+		checkpointFile: ckFile,
 	}
 
 	go func() {
@@ -244,8 +273,6 @@ func NewMapReduce(port string, jobName string, jobDesc JobDescription,
 	}()
 
 	startTime := time.Now()
-	var err error
-
 	if !master.LocalRun {
 		log.Debug("Starting workers")
 		err = master.startWorker("mr")
@@ -254,9 +281,9 @@ func NewMapReduce(port string, jobName string, jobDesc JobDescription,
 		}
 	}
 
-	master.Schedule(mapPhase)
+	master.Schedule(mapPhase, ck)
 	log.Debug("Map DONE")
-	master.Schedule(reducePhase)
+	master.Schedule(reducePhase, ck)
 	log.Debug("Reduce DONE")
 
 	if !master.LocalRun {

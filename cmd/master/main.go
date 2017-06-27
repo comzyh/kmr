@@ -12,20 +12,21 @@ import (
 
 	"github.com/naturali/kmr/master"
 
+	"github.com/naturali/kmr/util"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
 
 var (
-	port       = flag.String("port", ":50051", "port")
-	jobName    = flag.String("jobname", "", "jobName")
-	inputFile  = flag.String("file", "", "input file path")
-	dataDir    = flag.String("intermediate-dir", "/tmp/", "directory of intermediate files")
-	nReduce    = flag.Int("nReduce", 1, "number of reducers")
-	local      = flag.Bool("local", false, "Wheter use local run")
-	namespace  = flag.String("namespace", "kmr", "kubernetes namespace to run KMR task")
-	configFile = flag.String("config", "", "MapReduce Job description JSON file, should be http(s) URL or a filepath")
-	readerType = flag.String("reader-type", "textfile", "type of record reader for input files")
+	port           = flag.String("port", ":50051", "port")
+	jobName        = flag.String("jobname", "", "jobName")
+	inputFile      = flag.String("file", "", "input file path")
+	dataDir        = flag.String("intermediate-dir", "/tmp/", "directory of intermediate files")
+	nReduce        = flag.Int("nReduce", 1, "number of reducers")
+	local          = flag.Bool("local", false, "Wheter use local run")
+	namespace      = flag.String("namespace", "kmr", "kubernetes namespace to run KMR task")
+	configFile     = flag.String("config", "", "MapReduce Job description JSON file, should be http(s) URL or a filepath")
+	checkpointFile = flag.String("checkpoint", "", "checkpoint input file")
 )
 
 func main() {
@@ -90,5 +91,10 @@ func main() {
 		}
 	}
 
-	master.NewMapReduce(*port, *jobName, jobDescription, clientset, *namespace, *local, *readerType)
+	var checkpoint *util.MapReduceCheckPoint
+	if *checkpointFile != "" {
+		checkpoint = util.RestoreCheckPointFromFile(*checkpointFile)
+	}
+
+	master.NewMapReduce(*port, *jobName, jobDescription, clientset, *namespace, *local, checkpoint)
 }
