@@ -152,10 +152,11 @@ func NewMemoryRecordReader(records []*Record) *SimpleRecordReader {
 
 func feedStream(preload chan<- *Record, reader io.Reader) {
 	go func() {
+		r := bufio.NewReader(reader)
 		for {
 			var err error
 			// Read Key
-			record, err := ReadRecord(reader)
+			record, err := ReadRecord(r)
 			if err == io.EOF {
 				break
 			} else if err != nil {
