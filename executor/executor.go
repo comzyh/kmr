@@ -20,10 +20,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-const (
-	FLUSH_SIZE = 80 * 1024 * 1024 // 80M
-)
-
 var (
 	jobName    = flag.String("jobname", "wc", "jobName")
 	inputFile  = flag.String("file", "", "input file path")
@@ -33,6 +29,7 @@ var (
 	nReduce    = flag.Int("nReduce", 1, "number of reducers")
 	mapID      = flag.Int("mapID", 0, "mapper id")
 	reduceID   = flag.Int("reduceID", 0, "reducer id")
+	flushSize  = flag.Int("flushSize", 100, "flushout size in megabytes")
 	readerType = flag.String("reader-type", "textfile", "type of record reader for input files")
 
 	masterAddr = flag.String("master-addr", "", "the address of master")
@@ -185,7 +182,7 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 		for in := range outputKV {
 			aggregated = append(aggregated, KVToRecord(in))
 			currentAggregatedSize += 8 + len(in.Key) + len(in.Value)
-			if currentAggregatedSize >= FLUSH_SIZE {
+			if currentAggregatedSize >= *flushSize*1024*1024 {
 
 				filename := bucket.FlushoutFileName("map", mapID, len(flushOutFiles), workerID)
 				waitFlushWrite.Add(1)
