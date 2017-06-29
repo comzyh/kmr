@@ -19,12 +19,13 @@ type ReduceDescription struct {
 
 // JobDescription
 type JobDescription struct {
-	MapBucket    string            `json:"mapBucket"`
-	InterBucket  string            `json:"interBucket"`
-	ReduceBucket string            `json:"reduceBucket"`
-	NWorker      int               `json:"nWorker"`
-	Map          MapDescription    `json:"map"`
-	Reduce       ReduceDescription `json:"reduce"`
-	Image        string            `json:"image"`
-	Command      []string          `json:"command"`
+	MapBucket    string            `json: "mapBucket"`
+	InterBucket  string            `json: "interBucket"`
+	ReduceBucket string            `json: "reduceBucket"`
+	NWorker      int               `json: "nWorker"`
+	Map          MapDescription    `json: "map"`
+	Reduce       ReduceDescription `json: "reduce"`
+	Image        string            `json: "image"`
+	Command      []string          `json: "command"`
+	CPULimit     string            `json: "cpulimit"`
 }
