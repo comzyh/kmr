@@ -36,8 +36,9 @@ var (
 )
 
 type ComputeWrap struct {
-	mapFunc    func(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV
-	reduceFunc func(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV
+	mapFunc     func(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV
+	reduceFunc  func(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV
+	combineFunc func(v1 []byte, v2 []byte) []byte
 }
 
 func (cw *ComputeWrap) BindMapper(mapper func(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV) {
@@ -46,6 +47,10 @@ func (cw *ComputeWrap) BindMapper(mapper func(kvs <-chan *kmrpb.KV) <-chan *kmrp
 
 func (cw *ComputeWrap) BindReducer(reducer func(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV) {
 	cw.reduceFunc = reducer
+}
+
+func (cw *ComputeWrap) BindCombiner(combiner func(v1 []byte, v2 []byte) []byte) {
+	cw.combineFunc = combiner
 }
 
 func (cw *ComputeWrap) Run() {
@@ -144,7 +149,7 @@ func (cw *ComputeWrap) phaseSelector(jobName string, phase string, intermediateD
 		if err := cw.doMap(recordReader, bk, taskID, nReduce, workerID); err != nil {
 			log.Fatalf("Fail to Map: %v", err)
 		}
-		reader.Close()
+		recordReader.Close()
 	case "reduce":
 		log.Infof("starting id%d reducer", nReduce)
 
@@ -158,12 +163,37 @@ func (cw *ComputeWrap) phaseSelector(jobName string, phase string, intermediateD
 		if err = cw.doReduce(bk, taskID, nMap, commitMappers, recordWriter); err != nil {
 			log.Fatalf("Fail to Reduce: %v", err)
 		}
-		writer.Close()
+		recordWriter.Close()
 	default:
 		panic("bad phase")
 	}
 	log.Info("Exit executor")
 	return nil
+}
+
+func (cw *ComputeWrap) sortAndCombine(aggregated []*records.Record) []*records.Record {
+	sort.Slice(aggregated, func(i, j int) bool {
+		return bytes.Compare(aggregated[i].Key, aggregated[j].Key) < 0
+	})
+	if cw.combineFunc == nil {
+		return aggregated
+	}
+	combined := make([]*records.Record, 0)
+	curRecord := &records.Record{}
+	for _, r := range aggregated {
+		if !bytes.Equal(curRecord.Key, r.Key) {
+			if curRecord.Key != nil {
+				combined = append(combined, curRecord)
+			}
+			curRecord = r
+		} else {
+			curRecord.Value = cw.combineFunc(curRecord.Value, r.Value)
+		}
+	}
+	if curRecord.Key != nil {
+		combined = append(combined, curRecord)
+	}
+	return combined
 }
 
 // doMap does map operation and save the intermediate files.
@@ -183,7 +213,6 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 			aggregated = append(aggregated, KVToRecord(in))
 			currentAggregatedSize += 8 + len(in.Key) + len(in.Value)
 			if currentAggregatedSize >= *flushSize*1024*1024 {
-
 				filename := bucket.FlushoutFileName("map", mapID, len(flushOutFiles), workerID)
 				waitFlushWrite.Add(1)
 				go func(filename string, data []*records.Record) {
@@ -192,10 +221,7 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 					if err != nil {
 						log.Fatal(err)
 					}
-					sort.Slice(data, func(i, j int) bool {
-						return bytes.Compare(data[i].Key, data[j].Key) < 0
-					})
-					for _, r := range data {
+					for _, r := range cw.sortAndCombine(data) {
 						if err := recordWriter.WriteRecord(r); err != nil {
 							log.Fatal(err)
 						}
@@ -205,15 +231,12 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 					}
 					waitFlushWrite.Done()
 				}(filename, aggregated)
-
 				aggregated = make([]*records.Record, 0)
 				currentAggregatedSize = 0
 				flushOutFiles = append(flushOutFiles, filename)
 			}
 		}
-		sort.Slice(aggregated, func(i, j int) bool {
-			return bytes.Compare(aggregated[i].Key, aggregated[j].Key) < 0
-		})
+		aggregated = cw.sortAndCombine(aggregated)
 		waitFlushWrite.Wait()
 		close(waitc)
 	}()
@@ -247,10 +270,24 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 		}
 		writers = append(writers, recordWriter)
 	}
+
+	curRecord := &records.Record{}
 	for r := range sorted {
-		rBucketID := util.HashBytesKey(r.Key) % nReduce
-		writers[rBucketID].WriteRecord(r)
+		if cw.combineFunc == nil || !bytes.Equal(curRecord.Key, r.Key) {
+			if curRecord.Key != nil {
+				rBucketID := util.HashBytesKey(curRecord.Key) % nReduce
+				writers[rBucketID].WriteRecord(curRecord)
+			}
+			curRecord = r
+		} else {
+			curRecord.Value = cw.combineFunc(curRecord.Value, r.Value)
+		}
 	}
+	if curRecord.Key != nil {
+		rBucketID := util.HashBytesKey(curRecord.Key) % nReduce
+		writers[rBucketID].WriteRecord(curRecord)
+	}
+
 	// Delete flushOutFiles
 	for _, reader := range readers {
 		reader.Close()
