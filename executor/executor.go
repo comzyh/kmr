@@ -198,6 +198,7 @@ func (cw *ComputeWrap) sortAndCombine(aggregated []*records.Record) []*records.R
 
 // doMap does map operation and save the intermediate files.
 func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID int, nReduce int, workerID int64) (err error) {
+	maxNumConcurrentFlush := 2
 	startTime := time.Now()
 	aggregated := make([]*records.Record, 0)
 	flushOutFiles := make([]string, 0)
@@ -208,13 +209,14 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 	inputKV := make(chan *kmrpb.KV, 1024)
 	outputKV := cw.mapFunc(inputKV)
 	go func() {
+		sem := util.NewSemaphore(maxNumConcurrentFlush)
 		var waitFlushWrite sync.WaitGroup
 		for in := range outputKV {
 			aggregated = append(aggregated, KVToRecord(in))
 			currentAggregatedSize += 8 + len(in.Key) + len(in.Value)
 			if currentAggregatedSize >= *flushSize*1024*1024 {
 				filename := bucket.FlushoutFileName("map", mapID, len(flushOutFiles), workerID)
-				waitFlushWrite.Add(1)
+				sem.Acquire(1)
 				go func(filename string, data []*records.Record) {
 					writer, err := bk.OpenWrite(filename)
 					recordWriter := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
@@ -229,13 +231,14 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 					if err := recordWriter.Close(); err != nil {
 						log.Fatal(err)
 					}
-					waitFlushWrite.Done()
+					sem.Release(1)
 				}(filename, aggregated)
 				aggregated = make([]*records.Record, 0)
 				currentAggregatedSize = 0
 				flushOutFiles = append(flushOutFiles, filename)
 			}
 		}
+		sem.Acquire(maxNumConcurrentFlush)
 		aggregated = cw.sortAndCombine(aggregated)
 		waitFlushWrite.Wait()
 		close(waitc)
