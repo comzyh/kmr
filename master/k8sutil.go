@@ -2,7 +2,9 @@ package master
 
 import (
 	"fmt"
+	"log"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/client-go/pkg/api/v1"
@@ -10,6 +12,21 @@ import (
 )
 
 func (master *Master) newReplicaSet(name string, command []string, image string, replicas int32) v1beta1.ReplicaSet {
+	var resourceRequirements v1.ResourceRequirements
+	if master.JobDesc.CPULimit != "" {
+		cpulimt, err := resource.ParseQuantity(master.JobDesc.CPULimit)
+		if err != nil {
+			log.Fatalf("Can't parse cpulimit \"%s\": %v", master.JobDesc.CPULimit, err)
+		}
+		resourceRequirements = v1.ResourceRequirements{
+			Requests: v1.ResourceList{
+				"cpu": cpulimt,
+			},
+			Limits: v1.ResourceList{
+				"cpu": cpulimt,
+			},
+		}
+	}
 	podTemplate := v1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
@@ -36,6 +53,7 @@ func (master *Master) newReplicaSet(name string, command []string, image string,
 							MountPath: "/cephfs",
 						},
 					},
+					Resources: resourceRequirements,
 				},
 			},
 			Volumes: []v1.Volume{
