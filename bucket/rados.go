@@ -1,0 +1,100 @@
+// +build linux
+package bucket
+
+import (
+	"log"
+
+	"github.com/ceph/go-ceph/rados"
+)
+
+// RadosBucket RadosBucket
+type RadosBucket struct {
+	Bucket
+	conn   *rados.Conn
+	ioctx  *rados.IOContext
+	pool   string
+	prefix string
+}
+
+// RadosObjectReader RadosObjectReader
+type RadosObjectReader struct {
+	ObjectReader
+	bucket *RadosBucket
+	name   string
+	offset uint64
+}
+
+// RadosObjectReader RadosObjectReader
+type RadosObjectWriter struct {
+	ObjectReader
+	bucket *RadosBucket
+	name   string
+	offset uint64
+}
+
+// Close close reader
+func (reader RadosObjectReader) Close() error {
+	return nil
+}
+
+// Read close reader
+func (reader RadosObjectReader) Read(p []byte) (n int, err error) {
+	n, err := reader.bucket.ioctx.Read(reader.bucket.prefix+reader.name, p, reader.offset)
+	offset += n
+	return n, err
+}
+
+// Close close writer
+func (reader RadosObjectWriter) Close() error {
+	return nil
+}
+
+func (writer RadosObjectWriter) Write(data []byte) (int, error) {
+	err := writer.bucket.ioctx.Write(reader.bucket.prefix+writer.name, data, writer.offset)
+	if err != nil {
+		writer.offset += len(data)
+		return 0, err
+	} else {
+		return len(data), nil
+	}
+}
+
+func NewRadosBucket(mons, secret, pool, prefix string) (bk Bucket, err error) {
+	conn, err := rados.NewConn()
+	conn.SetConfigOption("mon_host", mons)
+	conn.SetConfigOption("key", secret)
+	ioctx, err := conn.OpenIOContext(pool)
+	if err != nil {
+		log.Printf("Cannot open pool %s: %v", pool, err)
+		return nil, err
+	}
+	return &RadosBucket{
+		conn:   conn,
+		ioctx:  ioctx,
+		pool:   pool,
+		prefix: prefix,
+	}
+}
+
+// OpenRead Open a RecordReader by name
+func (bk *RadosBucket) OpenRead(key string) (rd RadosObjectReader, err error) {
+	return RadosObjectReader{
+		bucket: bk,
+		name:   key,
+		offset: uint64(0),
+	}, nil
+}
+
+// OpenWrite Open a RecordWriter by name
+func (bk *RadosBucket) OpenWrite(key string) (wr RadosObjectWriter, err error) {
+	return RadosObjectWriter{
+		bucket: bk,
+		name:   key,
+		offset: uint64(0),
+	}, nil
+}
+
+// Delete Delete object in bucket
+func (bk *RadosBucket) Delete(key string) error {
+	return bk.ioctx.Delete(key)
+}
