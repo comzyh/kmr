@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 
 	"github.com/ceph/go-ceph/rados"
 )
@@ -10,23 +9,13 @@ import (
 func main() {
 	// for test ceph, ignore this file
 	mons := "localhost:6789"
-	secret := []byte("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==")
+	secret := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
 
 	conn, _ := rados.NewConn()
-	err := ioutil.WriteFile("ceph-keyfile", secret, 0600)
-	if err != nil {
-		fmt.Println("Failed to store keyfile:", err)
-		return
-	}
+	conn.SetConfigOption("mon_host", mons)
+	conn.SetConfigOption("key", secret)
 
-	args := []string{"--mon-host", mons, "--keyfile", "ceph-keyfile"}
-	err = conn.ParseCmdLineArgs(args)
-	if err != nil {
-		fmt.Println("Failed to Parse args:", err)
-		return
-	}
-
-	err = conn.Connect()
+	err := conn.Connect()
 	if err != nil {
 		fmt.Println("Failed to connect:", err)
 		return
