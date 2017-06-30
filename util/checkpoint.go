@@ -52,7 +52,7 @@ func RestoreCheckPointFromFile(filename string) *MapReduceCheckPoint {
 		if err != nil {
 			break
 		}
-		parts := strings.Split(strings.TrimRight(line, "\n"), " ")
+		parts := strings.Split(strings.TrimSpace(line), " ")
 		switch parts[0] {
 		case "map":
 			tid, _ := strconv.Atoi(parts[1])
