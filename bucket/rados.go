@@ -1,9 +1,10 @@
 // +build linux
+
 package bucket
 
 import (
-	"log"
 	"io"
+	"log"
 
 	"github.com/ceph/go-ceph/rados"
 )
@@ -44,7 +45,7 @@ func (reader *RadosObjectReader) Read(p []byte) (n int, err error) {
 	reader.offset += uint64(n)
 	if n == 0 {
 		return 0, io.EOF
-        }
+	}
 	return n, err
 }
 

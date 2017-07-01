@@ -17,11 +17,16 @@ type ReduceDescription struct {
 	Command []string `json:"command"`
 }
 
+type BucketDescription struct {
+	BucketType string                 `json: "bucketType"`
+	Config     map[string]interface{} `json: "config"`
+}
+
 // JobDescription
 type JobDescription struct {
-	MapBucket    string            `json: "mapBucket"`
-	InterBucket  string            `json: "interBucket"`
-	ReduceBucket string            `json: "reduceBucket"`
+	MapBucket    BucketDescription `json: "mapBucket"`
+	InterBucket  BucketDescription `json: "interBucket"`
+	ReduceBucket BucketDescription `json: "reduceBucket"`
 	NWorker      int               `json: "nWorker"`
 	Map          MapDescription    `json: "map"`
 	Reduce       ReduceDescription `json: "reduce"`
