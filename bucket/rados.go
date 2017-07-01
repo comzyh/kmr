@@ -39,7 +39,7 @@ func (reader *RadosObjectReader) Close() error {
 	return nil
 }
 
-// Read close reader
+// Read read from object
 func (reader *RadosObjectReader) Read(p []byte) (n int, err error) {
 	n, err = reader.bucket.ioctx.Read(reader.bucket.prefix+reader.name, p, reader.offset)
 	reader.offset += uint64(n)
@@ -58,14 +58,17 @@ func (writer *RadosObjectWriter) Write(data []byte) (int, error) {
 	err := writer.bucket.ioctx.Write(writer.bucket.prefix+writer.name, data, writer.offset)
 	if err != nil {
 		return 0, err
-	} else {
-		writer.offset += uint64(len(data))
-		return len(data), nil
 	}
+	writer.offset += uint64(len(data))
+	return len(data), nil
+
 }
 
 func NewRadosBucket(mons, secret, pool, prefix string) (bk Bucket, err error) {
 	conn, err := rados.NewConn()
+	if err != nil {
+		return nil, err
+	}
 	conn.SetConfigOption("mon_host", mons)
 	conn.SetConfigOption("key", secret)
 	err = conn.Connect()
