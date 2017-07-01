@@ -3,6 +3,7 @@ package bucket
 
 import (
 	"log"
+	"io"
 
 	"github.com/ceph/go-ceph/rados"
 )
@@ -33,28 +34,31 @@ type RadosObjectWriter struct {
 }
 
 // Close close reader
-func (reader RadosObjectReader) Close() error {
+func (reader *RadosObjectReader) Close() error {
 	return nil
 }
 
 // Read close reader
-func (reader RadosObjectReader) Read(p []byte) (n int, err error) {
+func (reader *RadosObjectReader) Read(p []byte) (n int, err error) {
 	n, err = reader.bucket.ioctx.Read(reader.bucket.prefix+reader.name, p, reader.offset)
 	reader.offset += uint64(n)
+	if n == 0 {
+		return 0, io.EOF
+        }
 	return n, err
 }
 
 // Close close writer
-func (reader RadosObjectWriter) Close() error {
+func (reader *RadosObjectWriter) Close() error {
 	return nil
 }
 
-func (writer RadosObjectWriter) Write(data []byte) (int, error) {
+func (writer *RadosObjectWriter) Write(data []byte) (int, error) {
 	err := writer.bucket.ioctx.Write(writer.bucket.prefix+writer.name, data, writer.offset)
 	if err != nil {
-		writer.offset += uint64(len(data))
 		return 0, err
 	} else {
+		writer.offset += uint64(len(data))
 		return len(data), nil
 	}
 }
@@ -63,6 +67,11 @@ func NewRadosBucket(mons, secret, pool, prefix string) (bk Bucket, err error) {
 	conn, err := rados.NewConn()
 	conn.SetConfigOption("mon_host", mons)
 	conn.SetConfigOption("key", secret)
+	err = conn.Connect()
+	if err != nil {
+		log.Println("Failed to connect ceph:", err)
+		return
+	}
 	ioctx, err := conn.OpenIOContext(pool)
 	if err != nil {
 		log.Printf("Cannot open pool %s: %v", pool, err)
@@ -78,7 +87,7 @@ func NewRadosBucket(mons, secret, pool, prefix string) (bk Bucket, err error) {
 
 // OpenRead Open a RecordReader by name
 func (bk *RadosBucket) OpenRead(key string) (rd ObjectReader, err error) {
-	return RadosObjectReader{
+	return &RadosObjectReader{
 		bucket: bk,
 		name:   key,
 		offset: uint64(0),
@@ -87,7 +96,7 @@ func (bk *RadosBucket) OpenRead(key string) (rd ObjectReader, err error) {
 
 // OpenWrite Open a RecordWriter by name
 func (bk *RadosBucket) OpenWrite(key string) (wr ObjectWriter, err error) {
-	return RadosObjectWriter{
+	return &RadosObjectWriter{
 		bucket: bk,
 		name:   key,
 		offset: uint64(0),
@@ -96,5 +105,5 @@ func (bk *RadosBucket) OpenWrite(key string) (wr ObjectWriter, err error) {
 
 // Delete Delete object in bucket
 func (bk *RadosBucket) Delete(key string) error {
-	return bk.ioctx.Delete(key)
+	return bk.ioctx.Delete(bk.prefix + key)
 }

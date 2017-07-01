@@ -55,7 +55,7 @@ func main() {
 			fmt.Println("n: ", n, "err:", err)
 			break
 		}
-		fmt.Println(n, buffer)
+		fmt.Println(n, string(buffer))
 	}
 	reader.Close()
 

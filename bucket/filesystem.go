@@ -59,7 +59,7 @@ func (fsb FSBucket) OpenRead(key string) (rd ObjectReader, err error) {
 	if err != nil {
 		log.Printf("Fail to open %v for read: %v", key, err)
 	}
-	return FSObjectReader{file: file}, nil
+	return &FSObjectReader{file: file}, nil
 }
 
 // OpenWrite Open a RecordWriter by name
@@ -69,7 +69,7 @@ func (fsb FSBucket) OpenWrite(key string) (wr ObjectWriter, err error) {
 	if err != nil {
 		log.Printf("Fail to open %v for write: %v", key, err)
 	}
-	return writer, nil
+	return &writer, nil
 }
 
 // Delete Delete object in bucket
