@@ -39,8 +39,8 @@ func (reader RadosObjectReader) Close() error {
 
 // Read close reader
 func (reader RadosObjectReader) Read(p []byte) (n int, err error) {
-	n, err := reader.bucket.ioctx.Read(reader.bucket.prefix+reader.name, p, reader.offset)
-	offset += n
+	n, err = reader.bucket.ioctx.Read(reader.bucket.prefix+reader.name, p, reader.offset)
+	reader.offset += uint64(n)
 	return n, err
 }
 
@@ -50,9 +50,9 @@ func (reader RadosObjectWriter) Close() error {
 }
 
 func (writer RadosObjectWriter) Write(data []byte) (int, error) {
-	err := writer.bucket.ioctx.Write(reader.bucket.prefix+writer.name, data, writer.offset)
+	err := writer.bucket.ioctx.Write(writer.bucket.prefix+writer.name, data, writer.offset)
 	if err != nil {
-		writer.offset += len(data)
+		writer.offset += uint64(len(data))
 		return 0, err
 	} else {
 		return len(data), nil
@@ -73,11 +73,11 @@ func NewRadosBucket(mons, secret, pool, prefix string) (bk Bucket, err error) {
 		ioctx:  ioctx,
 		pool:   pool,
 		prefix: prefix,
-	}
+	}, nil
 }
 
 // OpenRead Open a RecordReader by name
-func (bk *RadosBucket) OpenRead(key string) (rd RadosObjectReader, err error) {
+func (bk *RadosBucket) OpenRead(key string) (rd ObjectReader, err error) {
 	return RadosObjectReader{
 		bucket: bk,
 		name:   key,
@@ -86,7 +86,7 @@ func (bk *RadosBucket) OpenRead(key string) (rd RadosObjectReader, err error) {
 }
 
 // OpenWrite Open a RecordWriter by name
-func (bk *RadosBucket) OpenWrite(key string) (wr RadosObjectWriter, err error) {
+func (bk *RadosBucket) OpenWrite(key string) (wr ObjectWriter, err error) {
 	return RadosObjectWriter{
 		bucket: bk,
 		name:   key,

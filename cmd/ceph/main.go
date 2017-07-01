@@ -30,15 +30,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("Can't open %s for write: %v", objName, err)
 	}
-	lines = []string{
+	lines := []string{
 		"Hello World\n",
 		"This is the firsst Line,\n",
 		"And this is the second line",
 		fmt.Sprintf("now is: %v", time.Now()),
 	}
 
-	for text := range lines {
-		n, err := writer.Write([]bytes(text))
+	for _, text := range lines {
+		n, err := writer.Write([]byte(text))
 		fmt.Println(n, err)
 	}
 	writer.Close()
