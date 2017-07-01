@@ -2,54 +2,65 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"log"
+	"time"
 
-	"github.com/ceph/go-ceph/rados"
+	"github.com/naturali/kmr/bucket"
+)
+
+var (
+	mons   = flag.String("mons", "", "ceph moniters")
+	secret = flag.String("secret", "", "ceph auth secret")
+	pool   = flag.String("pool", "", "ceph rados pool")
+	prefix = flag.String("prefix", "/tmp/", "object prefix for ceph objectname, like '/job/'")
 )
 
 func main() {
-	// for test ceph, ignore this file
-	mons := "localhost:6789"
-	secret := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
-
-	conn, _ := rados.NewConn()
-	conn.SetConfigOption("mon_host", mons)
-	conn.SetConfigOption("key", secret)
-
-	err := conn.Connect()
+	flag.Parse()
+	bk, err := bucket.NewRadosBucket(*mons, *secret, *pool, *prefix)
 	if err != nil {
-		fmt.Println("Failed to connect:", err)
-		return
+		log.Fatalf("Can't connnect ceph pool: %v ", err)
+	}
+	objName := "test-object"
+
+	// Test write
+	writer, err := bk.OpenWrite(objName)
+	if err != nil {
+		log.Fatalf("Can't open %s for write: %v", objName, err)
+	}
+	lines = []string{
+		"Hello World\n",
+		"This is the firsst Line,\n",
+		"And this is the second line",
+		fmt.Sprintf("now is: %v", time.Now()),
 	}
 
-	ioctx, err := conn.OpenIOContext("kmr")
-	if err != nil {
-		fmt.Println(fmt.Sprintf("Cannot open %s:", "kmr"), err)
-		return
+	for text := range lines {
+		n, err := writer.Write([]bytes(text))
+		fmt.Println(n, err)
 	}
-	bytes_in := []byte("input data j")
-	err = ioctx.Write("obj", bytes_in, 0)
-	if err != nil {
-		fmt.Println(fmt.Sprintf("Cannot write %s:", "obj"), err)
-		return
-	}
+	writer.Close()
 
-	bytes_out := make([]byte, 5)
-	var offset uint64 = 0
+	// Test read
+	reader, err := bk.OpenRead(objName)
+	if err != nil {
+		log.Fatalf("Can't open %s for read: %v", objName, err)
+	}
+	buffer := make([]byte, 7)
 	for {
-		n, err := ioctx.Read("obj", bytes_out, offset)
+		n, err := reader.Read(buffer)
 		if err != nil {
-			fmt.Printf("Cannot write %s, err: %v\n", "obj", err)
-			return
+			fmt.Println("n: ", n, "err:", err)
+			break
 		}
-		if n > 0 {
-			offset += uint64(n)
-		} else {
-			fmt.Printf("EOF")
-			return
-		}
-		fmt.Printf("read count: %d, content: %s\n", n, bytes_out[:n])
+		fmt.Println(n, buffer)
 	}
+	reader.Close()
 
-	fmt.Println("Finish")
+	err = bk.Delete(objName)
+	if err != nil {
+		log.Fatalf("Can't elete %s: %v", objName, err)
+	}
 }
