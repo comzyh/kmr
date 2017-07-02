@@ -50,7 +50,7 @@ func (reader *RadosObjectReader) Read(p []byte) (n int, err error) {
 }
 
 // Close close writer
-func (reader *RadosObjectWriter) Close() error {
+func (writer *RadosObjectWriter) Close() error {
 	return nil
 }
 

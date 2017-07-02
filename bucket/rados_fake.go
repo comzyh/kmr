@@ -2,6 +2,7 @@
 
 // Package bucket
 // This file allow non-linux user to compile KMR on their device
+// Attention: do not remove the empty line under the first line of this file
 
 package bucket
 
@@ -28,7 +29,7 @@ type RadosObjectReader struct {
 	offset uint64
 }
 
-// RadosObjectReader RadosObjectReader
+// RadosObjectWriter RadosObjectWriter
 type RadosObjectWriter struct {
 	ObjectReader
 	bucket *RadosBucket
@@ -47,14 +48,16 @@ func (reader *RadosObjectReader) Read(p []byte) (n int, err error) {
 }
 
 // Close close writer
-func (reader *RadosObjectWriter) Close() error {
+func (writer *RadosObjectWriter) Close() error {
 	return errNotImplemented
 }
 
+// Write Write
 func (writer *RadosObjectWriter) Write(data []byte) (int, error) {
 	return 0, errNotImplemented
 }
 
+// NewRadosBucket NewRadosBucket
 func NewRadosBucket(mons, secret, pool, prefix string) (bk Bucket, err error) {
 	return nil, errNotImplemented
 }

@@ -2,6 +2,7 @@ package executor
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"os"
 	"sort"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/naturali/kmr/bucket"
+	"github.com/naturali/kmr/job"
 	"github.com/naturali/kmr/master"
 	kmrpb "github.com/naturali/kmr/pb"
 	"github.com/naturali/kmr/records"
@@ -70,7 +72,13 @@ func (cw *ComputeWrap) Run() {
 		case "reduce":
 			taskID = *reduceID
 		}
-		err := cw.phaseSelector(*jobName, *phase, *dataDir, *inputFile, *nMap, *nReduce, *readerType, taskID, 0, make([]int64, *nMap))
+		bucket := job.BucketDescription{
+			BucketType: "filesystem",
+			Config:     job.BucketConfig{"directory": *dataDir},
+		}
+		err := cw.phaseSelector(*jobName, *phase,
+			bucket, bucket, bucket,
+			*inputFile, *nMap, *nReduce, *readerType, taskID, 0, make([]int64, *nMap))
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -106,7 +114,13 @@ func (cw *ComputeWrap) Run() {
 					})
 				}
 			}()
-			err = cw.phaseSelector(taskInfo.JobName, taskInfo.Phase, taskInfo.IntermediateDir, taskInfo.File,
+			var mapBucket, interBucket, reduceBucket job.BucketDescription
+			json.Unmarshal([]byte(taskInfo.MapBucketJson), &mapBucket)
+			json.Unmarshal([]byte(taskInfo.IntermediateBucketJson), &interBucket)
+			json.Unmarshal([]byte(taskInfo.ReduceBucketJson), &reduceBucket)
+
+			err = cw.phaseSelector(taskInfo.JobName, taskInfo.Phase,
+				mapBucket, interBucket, reduceBucket, taskInfo.File,
 				int(taskInfo.NMap), int(taskInfo.NReduce), taskInfo.ReaderType, int(taskInfo.TaskID), task.WorkerID, taskInfo.CommitMappers)
 			retcode = kmrpb.ReportInfo_FINISH
 			if err != nil {
@@ -129,10 +143,11 @@ func (cw *ComputeWrap) Run() {
 	}
 }
 
-func (cw *ComputeWrap) phaseSelector(jobName string, phase string, intermediateDir string, file string,
+func (cw *ComputeWrap) phaseSelector(jobName string, phase string,
+	mapBucket, interBucket, reduceBucket job.BucketDescription, file string,
 	nMap int, nReduce int, readerType string, taskID int, workerID int64,
 	commitMappers []int64) error {
-	bk, err := bucket.NewFSBucket(intermediateDir + "/" + jobName)
+	interBk, err := bucket.NewBucket(interBucket.BucketType, interBucket.Config)
 	if err != nil {
 		log.Fatalf("Fail to open bucket: %v", err)
 	}
@@ -146,21 +161,24 @@ func (cw *ComputeWrap) phaseSelector(jobName string, phase string, intermediateD
 		}
 		recordReader := records.MakeRecordReader(readerType, map[string]interface{}{"reader": reader})
 		// Mapper
-		if err := cw.doMap(recordReader, bk, taskID, nReduce, workerID); err != nil {
+		if err := cw.doMap(recordReader, interBk, taskID, nReduce, workerID); err != nil {
 			log.Fatalf("Fail to Map: %v", err)
 		}
 		recordReader.Close()
 	case "reduce":
 		log.Infof("starting id%d reducer", nReduce)
-
+		reduceBk, err := bucket.NewBucket(reduceBucket.BucketType, reduceBucket.Config)
+		if err != nil {
+			log.Fatalf("Fail to open reducebucket: %v", err)
+		}
 		// Reduce
 		outputFile := "res-" + strconv.Itoa(taskID) + ".t"
-		writer, err := bk.OpenWrite(outputFile)
+		writer, err := reduceBk.OpenWrite(outputFile)
 		if err != nil {
 			log.Fatalf("Failed to open intermediate: %v", err)
 		}
 		recordWriter := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
-		if err = cw.doReduce(bk, taskID, nMap, commitMappers, recordWriter); err != nil {
+		if err = cw.doReduce(interBk, taskID, nMap, commitMappers, recordWriter); err != nil {
 			log.Fatalf("Fail to Reduce: %v", err)
 		}
 		recordWriter.Close()
@@ -307,11 +325,11 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 }
 
 // doReduce does reduce operation
-func (cw *ComputeWrap) doReduce(bk bucket.Bucket, reduceID int, nMap int, commitMappers []int64, writer records.RecordWriter) error {
+func (cw *ComputeWrap) doReduce(interBk bucket.Bucket, reduceID int, nMap int, commitMappers []int64, writer records.RecordWriter) error {
 	startTime := time.Now()
 	readers := make([]records.RecordReader, 0)
 	for i := 0; i < nMap; i++ {
-		reader, err := bk.OpenRead(bucket.IntermediateFileName(i, reduceID, commitMappers[i]))
+		reader, err := interBk.OpenRead(bucket.IntermediateFileName(i, reduceID, commitMappers[i]))
 		recordReader := records.NewStreamRecordReader(reader)
 		if err != nil {
 			log.Fatalf("Failed to open intermediate: %v", err)

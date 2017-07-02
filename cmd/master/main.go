@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/naturali/kmr/job"
 	"github.com/naturali/kmr/master"
 
 	"github.com/naturali/kmr/util"
@@ -64,7 +65,7 @@ func main() {
 		clientset = nil
 	}
 
-	var jobDescription master.JobDescription
+	var jobDescription job.JobDescription
 
 	if *configFile != "" {
 		raw, err := ioutil.ReadFile(*configFile)
@@ -78,14 +79,20 @@ func main() {
 		rebuiltJson, _ := json.Marshal(jobDescription)
 		fmt.Println("Job description:\n", string(rebuiltJson))
 	} else {
-		jobDescription = master.JobDescription{
-			MapBucket:    "fileSystem://" + *dataDir,
-			InterBucket:  "fileSystem://" + *dataDir,
-			ReduceBucket: "fileSystem://" + *dataDir,
-			Map: master.MapDescription{
+		bucket := job.BucketDescription{
+			BucketType: "filesystem",
+			Config: map[string]interface{}{
+				"directory": *dataDir,
+			},
+		}
+		jobDescription = job.JobDescription{
+			MapBucket:    bucket,
+			InterBucket:  bucket,
+			ReduceBucket: bucket,
+			Map: job.MapDescription{
 				Objects: strings.Split(*inputFile, ","),
 			},
-			Reduce: master.ReduceDescription{
+			Reduce: job.ReduceDescription{
 				NReduce: *nReduce,
 			},
 		}

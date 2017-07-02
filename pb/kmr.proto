@@ -33,13 +33,15 @@ message Task {
 message TaskInfo {
     string jobName = 1;
     string file = 2;
-    string intermediateDir = 3;
-    string phase = 4;
-    int32 nMap = 5;
-    int32 nReduce = 6;
-    string ReaderType = 7;
-    int32 TaskID = 8;
-    repeated int64 commitMappers = 9;
+    string mapBucketJson = 3;
+    string intermediateBucketJson = 4;
+    string reduceBucketJson = 5;
+    string phase = 6;
+    int32 nMap = 7;
+    int32 nReduce = 8;
+    string ReaderType = 9;
+    int32 TaskID = 10;
+    repeated int64 commitMappers = 11;
 }
 
 message Response {

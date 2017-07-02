@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/naturali/kmr/job"
 	kmrpb "github.com/naturali/kmr/pb"
 	"github.com/naturali/kmr/util"
 	"github.com/naturali/kmr/util/log"
@@ -45,10 +46,10 @@ type Task struct {
 type Master struct {
 	sync.Mutex
 
-	JobName  string         // Name of currently executing job
-	JobDesc  JobDescription // Job description
-	LocalRun bool           // Is LocalRun
-	port     string         // Master listening port, like ":50051"
+	JobName  string             // Name of currently executing job
+	JobDesc  job.JobDescription // Job description
+	LocalRun bool               // Is LocalRun
+	port     string             // Master listening port, like ":50051"
 
 	wg        sync.WaitGroup     // WaitGroup for waiting all of tasks finished on each phase
 	tasks     []*Task            // Holding all of tasks
@@ -132,15 +133,16 @@ func (master *Master) Schedule(phase string, ck *util.MapReduceCheckPoint) {
 	master.currentPhase = phase
 	for i := 0; i < nTasks; i++ {
 		taskInfo := &kmrpb.TaskInfo{
-			JobName:         master.JobName,
-			Phase:           phase,
-			IntermediateDir: master.JobDesc.InterBucket[len("fileSystem://"):], // FIXME:
-			TaskID:          int32(i),
-			NReduce:         int32(master.JobDesc.Reduce.NReduce),
-			NMap:            int32(len(master.JobDesc.Map.Objects)),
-			ReaderType:      master.JobDesc.Map.ReaderType,
+			JobName:                master.JobName,
+			Phase:                  phase,
+			MapBucketJson:          master.JobDesc.MapBucket.Marshal(),
+			IntermediateBucketJson: master.JobDesc.InterBucket.Marshal(),
+			ReduceBucketJson:       master.JobDesc.ReduceBucket.Marshal(),
+			TaskID:                 int32(i),
+			NReduce:                int32(master.JobDesc.Reduce.NReduce),
+			NMap:                   int32(len(master.JobDesc.Map.Objects)),
+			ReaderType:             master.JobDesc.Map.ReaderType,
 		}
-		fmt.Println(master.JobDesc.MapBucket[len("fileSystem://"):])
 		if phase == mapPhase {
 			taskInfo.File = master.JobDesc.Map.Objects[i]
 		}
@@ -240,7 +242,7 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 }
 
 // NewMapReduce creates a map-reduce job.
-func NewMapReduce(port string, jobName string, jobDesc JobDescription,
+func NewMapReduce(port string, jobName string, jobDesc job.JobDescription,
 	k8sclient *kubernetes.Clientset, namespace string, localRun bool, ck *util.MapReduceCheckPoint) {
 	ckFile, err := os.Create(fmt.Sprintf("%s.ck", jobName))
 	if err != nil {
