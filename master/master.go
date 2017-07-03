@@ -215,7 +215,6 @@ func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*km
 
 // ReportTask is for executor to report its progress state to master.
 func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.Response, error) {
-	log.Debugf("get heartbeat phase=%s, taskid=%d, workid=%d", in.Phase, in.TaskID, in.WorkerID)
 	s.master.Lock()
 	defer s.master.Unlock()
 
@@ -223,10 +222,12 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 		var heartbeatCode int
 		switch in.Retcode {
 		case kmrpb.ReportInfo_FINISH:
+			log.Debugf("task finished: phase=%s, taskid=%d, workid=%d", in.Phase, in.TaskID, in.WorkerID)
 			heartbeatCode = HEARTBEAT_CODE_FINISH
 		case kmrpb.ReportInfo_DOING:
 			heartbeatCode = HEARTBEAT_CODE_PULSE
 		case kmrpb.ReportInfo_ERROR:
+			log.Debugf("task error: phase=%s, taskid=%d, workid=%d", in.Phase, in.TaskID, in.WorkerID)
 			heartbeatCode = HEARTBEAT_CODE_DEAD
 		default:
 			panic("unknown ReportInfo")
