@@ -39,8 +39,8 @@ message TaskInfo {
     string phase = 6;
     int32 nMap = 7;
     int32 nReduce = 8;
-    string ReaderType = 9;
-    int32 TaskID = 10;
+    string readerType = 9;
+    int32 taskID = 10;
     repeated int64 commitMappers = 11;
 }
 
