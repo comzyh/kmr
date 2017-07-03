@@ -52,8 +52,9 @@ func NewBucket(bucketType string, config map[string]interface{}) (Bucket, error)
 			prefix = ""
 		}
 		return NewRadosBucket(mons.(string), secret.(string), pool.(string), prefix.(string))
+	default:
+		return nil, fmt.Errorf("Unknown bucket type \"%s\"", bucketType)
 	}
-	return nil, fmt.Errorf("Unknown bucketType %s", bucketType)
 }
 
 // IntermediateFileName constructs the name of the intermediate file.
