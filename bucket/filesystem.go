@@ -55,21 +55,23 @@ func NewFSBucket(directory string) (bk Bucket, err error) {
 
 // OpenRead Open a RecordReader by name
 func (fsb FSBucket) OpenRead(key string) (rd ObjectReader, err error) {
-	file, err := os.OpenFile(filepath.Join(fsb.directory, key), os.O_RDONLY, 0666)
+	path := filepath.Join(fsb.directory, key)
+	file, err := os.OpenFile(path, os.O_RDONLY, 0666)
 	if err != nil {
-		log.Printf("Fail to open %v for read: %v", key, err)
+		log.Printf("Fail to open %v for read(abspath: \"%v\"): %v", key, path, err)
 	}
-	return FSObjectReader{file: file}, nil
+	return &FSObjectReader{file: file}, nil
 }
 
 // OpenWrite Open a RecordWriter by name
 func (fsb FSBucket) OpenWrite(key string) (wr ObjectWriter, err error) {
 	var writer FSObjectWriter
-	writer.file, err = os.OpenFile(filepath.Join(fsb.directory, key), os.O_RDWR|os.O_CREATE, 0666)
+	path := filepath.Join(fsb.directory, key)
+	writer.file, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
-		log.Printf("Fail to open %v for write: %v", key, err)
+		log.Printf("Fail to open %v for write (abspath: \"%v\"): %v", key, path, err)
 	}
-	return writer, nil
+	return &writer, nil
 }
 
 // Delete Delete object in bucket

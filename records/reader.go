@@ -208,6 +208,7 @@ func MakeRecordReader(name string, params map[string]interface{}) RecordReader {
 	case "console":
 		return NewConsoleRecordReader()
 	default:
+		log.Debugf("Warning, ReaderType = \"%s\", you are using default reader(NewConsoleRecordReader).", name)
 		return NewConsoleRecordReader()
 
 	}

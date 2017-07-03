@@ -1,65 +1,67 @@
+// +build linux
+
 package main
 
 import (
+	"flag"
 	"fmt"
-	"io/ioutil"
+	"log"
+	"time"
 
-	"github.com/ceph/go-ceph/rados"
+	"github.com/naturali/kmr/bucket"
+)
+
+var (
+	mons   = flag.String("mons", "", "ceph moniters")
+	secret = flag.String("secret", "", "ceph auth secret")
+	pool   = flag.String("pool", "", "ceph rados pool")
+	prefix = flag.String("prefix", "/tmp/", "object prefix for ceph objectname, like '/job/'")
 )
 
 func main() {
-	// for test ceph, ignore this file
-	mons := "localhost:6789"
-	secret := []byte("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==")
-
-	conn, _ := rados.NewConn()
-	err := ioutil.WriteFile("ceph-keyfile", secret, 0600)
+	flag.Parse()
+	bk, err := bucket.NewRadosBucket(*mons, *secret, *pool, *prefix)
 	if err != nil {
-		fmt.Println("Failed to store keyfile:", err)
-		return
+		log.Fatalf("Can't connnect ceph pool: %v ", err)
+	}
+	objName := "test-object"
+
+	// Test write
+	writer, err := bk.OpenWrite(objName)
+	if err != nil {
+		log.Fatalf("Can't open %s for write: %v", objName, err)
+	}
+	lines := []string{
+		"Hello World\n",
+		"This is the firsst Line,\n",
+		"And this is the second line",
+		fmt.Sprintf("now is: %v", time.Now()),
 	}
 
-	args := []string{"--mon-host", mons, "--keyfile", "ceph-keyfile"}
-	err = conn.ParseCmdLineArgs(args)
-	if err != nil {
-		fmt.Println("Failed to Parse args:", err)
-		return
+	for _, text := range lines {
+		n, err := writer.Write([]byte(text))
+		fmt.Println(n, err)
 	}
+	writer.Close()
 
-	err = conn.Connect()
+	// Test read
+	reader, err := bk.OpenRead(objName)
 	if err != nil {
-		fmt.Println("Failed to connect:", err)
-		return
+		log.Fatalf("Can't open %s for read: %v", objName, err)
 	}
-
-	ioctx, err := conn.OpenIOContext("kmr")
-	if err != nil {
-		fmt.Println(fmt.Sprintf("Cannot open %s:", "kmr"), err)
-		return
-	}
-	bytes_in := []byte("input data j")
-	err = ioctx.Write("obj", bytes_in, 0)
-	if err != nil {
-		fmt.Println(fmt.Sprintf("Cannot write %s:", "obj"), err)
-		return
-	}
-
-	bytes_out := make([]byte, 5)
-	var offset uint64 = 0
+	buffer := make([]byte, 7)
 	for {
-		n, err := ioctx.Read("obj", bytes_out, offset)
+		n, err := reader.Read(buffer)
 		if err != nil {
-			fmt.Printf("Cannot write %s, err: %v\n", "obj", err)
-			return
+			fmt.Println("n: ", n, "err:", err)
+			break
 		}
-		if n > 0 {
-			offset += uint64(n)
-		} else {
-			fmt.Printf("EOF")
-			return
-		}
-		fmt.Printf("read count: %d, content: %s\n", n, bytes_out[:n])
+		fmt.Println(n, string(buffer))
 	}
+	reader.Close()
 
-	fmt.Println("Finish")
+	err = bk.Delete(objName)
+	if err != nil {
+		log.Fatalf("Can't elete %s: %v", objName, err)
+	}
 }

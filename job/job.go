@@ -1,81 +1,47 @@
 package job
 
-type Job interface {
-	Configure(JobConfig)
-	Launch()
-	Abort()
+import "encoding/json"
 
-	GetStatus()
-	IsJobComplete()
+// MapDescription MapDescription
+type MapDescription struct {
+	NWorker    int      `json:"nWorker"`
+	Objects    []string `json:"objects"`
+	Image      string   `json:"image"`
+	Command    []string `json:"command"`
+	ReaderType string   `json:"readerType"`
 }
 
-type kubeJob struct {
-	jobConfig JobConfig
-	mappers   []Task
-	reducers  []Task
+// ReduceDescription ReduceDescription
+type ReduceDescription struct {
+	NWorker int      `json:"nWorker"`
+	NReduce int      `json:"nReduce"`
+	Image   string   `json:"image"`
+	Command []string `json:"command"`
 }
 
-func NewKubeJob() *kubeJob {
-	return &kubeJob{
-		jobConfig: JobConfig{},
-	}
+// BucketConfig Parameters of bucket
+type BucketConfig map[string]interface{}
+
+// BucketDescription BucketDescription
+type BucketDescription struct {
+	BucketType string       `json:"bucketType"`
+	Config     BucketConfig `json:"config"`
 }
 
-type Task struct {
-	id    string
-	Phase string
+// JobDescription description of a job
+type JobDescription struct {
+	MapBucket    BucketDescription `json:"mapBucket"`
+	InterBucket  BucketDescription `json:"interBucket"`
+	ReduceBucket BucketDescription `json:"reduceBucket"`
+	NWorker      int               `json:"nWorker"`
+	Map          MapDescription    `json:"map"`
+	Reduce       ReduceDescription `json:"reduce"`
+	Image        string            `json:"image"`
+	Command      []string          `json:"command"`
+	CPULimit     string            `json:"cpulimit"`
 }
 
-func (job *kubeJob) Launch() {
-	// TODO(@comzyh)
-	// fake inits
-	// dataSource := []string{"file1, file2", "file3,file4", "file5"}
-	// mapperCount := len(dataSource)
-	// reducerCount := 5
-
-	// for shards := range dataSource {
-	// 	task := &Task{
-	// 		Phase:   "map",
-	// 		handler: "name.of.handler",
-	// 		shards:  shards,
-	// 	}
-	// 	kickOffTask(task)
-	//
-	// 	job.mappers = append(job.mappers, task)
-	// }
-	//
-	// job.waitForMapToComplete()
-	//
-	// job.shuffle()
-	//
-	// // fake: from shuffle()
-	// reduceKeys := []string{}
-	// for key := range reduceKeys {
-	// 	task := &Task{
-	// 		phase:   "reduce",
-	// 		handler: "name.of.handler",
-	// 		shards:  shards,
-	// 	}
-	// 	kickOffask(task)
-	// 	job.reducers = append(job.reducers, Task{taskID})
-	// }
-	// job.waitForReduceToComplete()
-}
-
-func (job *kubeJob) waitForMapToComplete() {
-}
-
-func (job *kubeJob) waitForReduceToComplete() {
-}
-
-func (job *kubeJob) Shuffle() {
-	for i := 0; i < job.jobConfig.MapperCount; i++ {
-		for j := 0; j < job.jobConfig.ReducerCount; j++ {
-			// TODO:
-		}
-	}
-}
-
-func (job *kubeJob) kickOffTask(task *Task) {
-	// TODO: submit a k8s job
+func (bucket *BucketDescription) Marshal() string {
+	ret, _ := json.Marshal(*bucket)
+	return string(ret)
 }

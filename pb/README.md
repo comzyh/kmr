@@ -2,4 +2,4 @@
 
 Run the following line in the root directory of project
 
-> protoc compute/pb/compute.proto  --go_out .
+> protoc kmr.proto  --go_out=plugins=grpc:.
