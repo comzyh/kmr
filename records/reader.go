@@ -152,7 +152,7 @@ func NewMemoryRecordReader(records []*Record) *SimpleRecordReader {
 
 func feedStream(preload chan<- *Record, reader io.Reader) {
 	go func() {
-		r := bufio.NewReader(reader)
+		r := bufio.NewReaderSize(reader, 1024*1024)
 		for {
 			var err error
 			// Read Key
@@ -171,7 +171,7 @@ func feedStream(preload chan<- *Record, reader io.Reader) {
 // feedTextStream read text file, emit (linenumber.(uint32), line.([]byte))
 func feedTextStream(preload chan<- *Record, reader io.Reader) {
 	go func() {
-		r := bufio.NewReader(reader)
+		r := bufio.NewReaderSize(reader, 1024*1024)
 		var lineNum uint32
 		for {
 			line, err := r.ReadBytes('\n')
