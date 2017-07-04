@@ -43,7 +43,7 @@ func (reader *RadosObjectReader) Close() error {
 func (reader *RadosObjectReader) Read(p []byte) (n int, err error) {
 	n, err = reader.bucket.ioctx.Read(reader.bucket.prefix+reader.name, p, reader.offset)
 	reader.offset += uint64(n)
-	if err != nil && n == 0 {
+	if err == nil && n == 0 {
 		return 0, io.EOF
 	}
 	return n, err
