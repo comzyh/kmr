@@ -71,14 +71,14 @@ type Master struct {
 // will releases the task, so that another work can takeover
 // Master will check the heartbeat every 5 seconds. If master cannot detect any heartbeat in the meantime, master
 // regards it as a DEAD worker.
-func (master *Master) CheckHeartbeatForEachWorker(taskID int, workerID int64, heartbeat chan int) {
+func (master *Master) CheckHeartbeatForEachWorker(phase string, taskID int, workerID int64, heartbeat chan int) {
 	for {
 		timeout := time.After(HEARTBEAT_TIMEOUT)
 		select {
 		case <-timeout:
 			// the worker fuck up, release the task
 			master.Lock()
-			if master.tasks[taskID].state == STATE_INPROGRESS {
+			if phase == master.currentPhase && master.tasks[taskID].state == STATE_INPROGRESS {
 				delete(master.tasks[taskID].workers, workerID)
 				if len(master.tasks[taskID].workers) == 0 {
 					master.tasks[taskID].state = STATE_IDLE
@@ -175,6 +175,7 @@ func (master *Master) Schedule(phase string, ck *util.MapReduceCheckPoint) {
 	}
 	master.Unlock()
 	master.wg.Wait()
+	log.Infof("All task in %v pahse finished", phase)
 
 	if phase == mapPhase {
 		master.commitMappers = make([]int64, 0)
@@ -195,10 +196,10 @@ func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*km
 	defer s.master.Unlock()
 
 	selectedId := -1
-	backupOfSelected := s.master.JobDesc.MaxBackupTask + 1 // number backup task that the 'selectedId' already have
+	backupOfSelected := s.master.JobDesc.MaxBackupTask // number backup task that the 'selectedId' already have
 	for id, t := range s.master.tasks {
 		if s.master.currentPhase == "map" {
-			if len(t.workers)-1 < backupOfSelected {
+			if t.state != STATE_COMPLETED && len(t.workers)-1 < backupOfSelected {
 				backupOfSelected = len(t.workers) - 1
 				selectedId = id
 			}
@@ -220,7 +221,7 @@ func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*km
 			log.Infof("deliver task %d", selectedId)
 		}
 
-		go s.master.CheckHeartbeatForEachWorker(selectedId, workerID, s.master.heartbeat[workerID])
+		go s.master.CheckHeartbeatForEachWorker(s.master.currentPhase, selectedId, workerID, s.master.heartbeat[workerID])
 		return &kmrpb.Task{
 			WorkerID: workerID,
 			Retcode:  0,
@@ -238,6 +239,10 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 	log.Debugf("get heartbeat phase=%s, taskid=%d, workid=%d", in.Phase, in.TaskID, in.WorkerID)
 	s.master.Lock()
 	defer s.master.Unlock()
+
+	if in.Phase != s.master.currentPhase {
+		return &kmrpb.Response{Retcode: 0}, nil
+	}
 
 	if _, ok := s.master.tasks[in.TaskID].workers[in.WorkerID]; ok {
 		var heartbeatCode int
