@@ -190,7 +190,7 @@ type server struct {
 
 // RequestTask is to deliver a task to worker.
 func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*kmrpb.Task, error) {
-	log.Debugf("register %s", in.JobName)
+	log.Infof("register %s", in.JobName)
 	s.master.Lock()
 	defer s.master.Unlock()
 
@@ -200,7 +200,7 @@ func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*km
 			t.workers[workerID] = id
 			t.state = STATE_INPROGRESS
 			s.master.heartbeat[workerID] = make(chan int)
-			log.Debug("deliver a task")
+			log.Infof("deliver a task")
 			go s.master.CheckHeartbeatForEachWorker(id, workerID, s.master.heartbeat[workerID])
 			return &kmrpb.Task{
 				WorkerID: workerID,
@@ -217,6 +217,7 @@ func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*km
 
 // ReportTask is for executor to report its progress state to master.
 func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.Response, error) {
+	log.Debugf("get heartbeat phase=%s, taskid=%d, workid=%d", in.Phase, in.TaskID, in.WorkerID)
 	s.master.Lock()
 	defer s.master.Unlock()
 
@@ -224,12 +225,12 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 		var heartbeatCode int
 		switch in.Retcode {
 		case kmrpb.ReportInfo_FINISH:
-			log.Debugf("task finished: phase=%s, taskid=%d, workid=%d", in.Phase, in.TaskID, in.WorkerID)
+			log.Infof("task finished: phase=%s, taskid=%d, workid=%d", in.Phase, in.TaskID, in.WorkerID)
 			heartbeatCode = HEARTBEAT_CODE_FINISH
 		case kmrpb.ReportInfo_DOING:
 			heartbeatCode = HEARTBEAT_CODE_PULSE
 		case kmrpb.ReportInfo_ERROR:
-			log.Debugf("task error: phase=%s, taskid=%d, workid=%d", in.Phase, in.TaskID, in.WorkerID)
+			log.Infof("task error: phase=%s, taskid=%d, workid=%d", in.Phase, in.TaskID, in.WorkerID)
 			heartbeatCode = HEARTBEAT_CODE_DEAD
 		default:
 			panic("unknown ReportInfo")

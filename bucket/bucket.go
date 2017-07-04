@@ -35,7 +35,7 @@ func NewBucket(bucketType string, config map[string]interface{}) (Bucket, error)
 
 		return NewFSBucket(directory.(string))
 	case "rados":
-		mons, ok := config["directory"]
+		mons, ok := config["mons"]
 		if !ok {
 			return nil, fmt.Errorf("mons is not provided")
 		}

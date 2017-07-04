@@ -12,8 +12,8 @@ import (
 
 	"github.com/naturali/kmr/job"
 	"github.com/naturali/kmr/master"
-
 	"github.com/naturali/kmr/util"
+
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
