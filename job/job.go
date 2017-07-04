@@ -30,15 +30,16 @@ type BucketDescription struct {
 
 // JobDescription description of a job
 type JobDescription struct {
-	MapBucket    BucketDescription `json:"mapBucket"`
-	InterBucket  BucketDescription `json:"interBucket"`
-	ReduceBucket BucketDescription `json:"reduceBucket"`
-	NWorker      int               `json:"nWorker"`
-	Map          MapDescription    `json:"map"`
-	Reduce       ReduceDescription `json:"reduce"`
-	Image        string            `json:"image"`
-	Command      []string          `json:"command"`
-	CPULimit     string            `json:"cpulimit"`
+	MapBucket     BucketDescription `json:"mapBucket"`
+	InterBucket   BucketDescription `json:"interBucket"`
+	ReduceBucket  BucketDescription `json:"reduceBucket"`
+	NWorker       int               `json:"nWorker"`
+	Map           MapDescription    `json:"map"`
+	Reduce        ReduceDescription `json:"reduce"`
+	Image         string            `json:"image"`
+	Command       []string          `json:"command"`
+	CPULimit      string            `json:"cpulimit"`
+	MaxBackupTask int               `json:"maxBackupTask"`
 }
 
 func (bucket *BucketDescription) Marshal() string {

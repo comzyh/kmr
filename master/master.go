@@ -194,20 +194,38 @@ func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*km
 	s.master.Lock()
 	defer s.master.Unlock()
 
+	selectedId := -1
+	backupOfSelected := s.master.JobDesc.MaxBackupTask + 1 // number backup task that the 'selectedId' already have
 	for id, t := range s.master.tasks {
-		if t.state == STATE_IDLE {
-			workerID := rand.Int63()
-			t.workers[workerID] = id
-			t.state = STATE_INPROGRESS
-			s.master.heartbeat[workerID] = make(chan int)
-			log.Infof("deliver a task")
-			go s.master.CheckHeartbeatForEachWorker(id, workerID, s.master.heartbeat[workerID])
-			return &kmrpb.Task{
-				WorkerID: workerID,
-				Retcode:  0,
-				Taskinfo: t.taskInfo,
-			}, nil
+		if s.master.currentPhase == "map" {
+			if len(t.workers)-1 < backupOfSelected {
+				backupOfSelected = len(t.workers) - 1
+				selectedId = id
+			}
+		} else if t.state == STATE_IDLE { // FIXME: for now, we do not have backup task for reduce task
+			selectedId = id
+			backupOfSelected = -1 // no backup task
+			break
 		}
+	}
+	if selectedId >= 0 {
+		t := s.master.tasks[selectedId]
+		workerID := rand.Int63()
+		t.workers[workerID] = selectedId
+		t.state = STATE_INPROGRESS
+		s.master.heartbeat[workerID] = make(chan int)
+		if backupOfSelected >= 0 {
+			log.Infof("deliver the No.%d backup of task %d", backupOfSelected+1, selectedId)
+		} else {
+			log.Infof("deliver task %d", selectedId)
+		}
+
+		go s.master.CheckHeartbeatForEachWorker(selectedId, workerID, s.master.heartbeat[workerID])
+		return &kmrpb.Task{
+			WorkerID: workerID,
+			Retcode:  0,
+			Taskinfo: t.taskInfo,
+		}, nil
 	}
 	log.Debug("no task right now")
 	return &kmrpb.Task{
