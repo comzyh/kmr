@@ -41,7 +41,7 @@ func NewBucket(bucketType string, config map[string]interface{}) (Bucket, error)
 		}
 		secret, ok := config["secret"]
 		if !ok {
-			return nil, fmt.Errorf("mons is not provided")
+			return nil, fmt.Errorf("secret is not provided")
 		}
 		pool, ok := config["pool"]
 		if !ok {
@@ -52,6 +52,37 @@ func NewBucket(bucketType string, config map[string]interface{}) (Bucket, error)
 			prefix = ""
 		}
 		return NewRadosBucket(mons.(string), secret.(string), pool.(string), prefix.(string))
+	case "azureblob":
+		accountName, ok := config["accountName"]
+		if !ok {
+			return nil, fmt.Errorf("accountName is not provided")
+		}
+		accountKey, ok := config["accountKey"]
+		if !ok {
+			return nil, fmt.Errorf("accountKey is not provided")
+		}
+		containerName, ok := config["containerName"]
+		if !ok {
+			return nil, fmt.Errorf("containerName is not provided")
+		}
+		blobServiceBaseUrl, ok := config["blobServiceBaseUrl"]
+		if !ok {
+			return nil, fmt.Errorf("blobServiceBaseUrl is not provided")
+		}
+		apiVersion, ok := config["apiVersion"]
+		if !ok {
+			return nil, fmt.Errorf("apiVersion is not provided")
+		}
+		useHttps, ok := config["useHttps"]
+		if !ok {
+			return nil, fmt.Errorf("useHttps is not provided")
+		}
+		directory, ok := config["directory"]
+		if !ok {
+			return nil, fmt.Errorf("directory is not provided")
+		}
+		return NewAzureBlobBucket(accountName.(string), accountKey.(string), containerName.(string),
+			blobServiceBaseUrl.(string), apiVersion.(string), useHttps.(bool), directory.(string))
 	default:
 		return nil, fmt.Errorf("Unknown bucket type \"%s\"", bucketType)
 	}

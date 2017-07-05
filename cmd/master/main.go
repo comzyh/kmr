@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/naturali/kmr/job"
 	"github.com/naturali/kmr/master"
@@ -32,6 +34,8 @@ var (
 
 func main() {
 	flag.Parse()
+	rand.Seed(time.Now().Unix())
+
 	var err error
 
 	// k8s client
