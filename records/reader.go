@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 
 	"github.com/naturali/kmr/bucket"
@@ -150,6 +151,22 @@ func NewMemoryRecordReader(records []*Record) *SimpleRecordReader {
 	}
 }
 
+func NewReadAllBytesReader(reader bucket.ObjectReader) *SimpleRecordReader {
+	preload := make(chan *Record, 1)
+	go func() {
+		b, err := ioutil.ReadAll(reader)
+		if err != nil {
+			panic(fmt.Sprintf("fail to ReadAll from reader %v", err))
+		}
+		preload <- &Record{Key: make([]byte, 4), Value: b}
+		close(preload)
+	}()
+	return &SimpleRecordReader{
+		input:  preload,
+		reader: reader,
+	}
+}
+
 func feedStream(preload chan<- *Record, reader io.Reader) {
 	go func() {
 		r := bufio.NewReaderSize(reader, 1024*1024)
@@ -207,6 +224,8 @@ func MakeRecordReader(name string, params map[string]interface{}) RecordReader {
 		return NewMemoryRecordReader(params["data"].([]*Record))
 	case "console":
 		return NewConsoleRecordReader()
+	case "readAllBytes":
+		return NewReadAllBytesReader(params["reader"].(bucket.ObjectReader))
 	default:
 		log.Debugf("Warning, ReaderType = \"%s\", you are using default reader(NewConsoleRecordReader).", name)
 		return NewConsoleRecordReader()
