@@ -5,8 +5,6 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/naturali/kmr/util/log"
-
 	"github.com/Azure/azure-sdk-for-go/storage"
 )
 
@@ -15,8 +13,8 @@ const maxBlockSize = 50 * 1024 * 1024
 
 // AzureBlobBucket use azure blob
 type AzureBlobBucket struct {
-	container *storage.Container
-	directory string
+	container      *storage.Container
+	blobNamePrefix string
 }
 
 type AzureBlobObjectReader struct {
@@ -76,24 +74,23 @@ func (writer *AzureBlobObjectWriter) Write(data []byte) (int, error) {
 
 // NewAzureBlobBucket new azure blob bucket
 func NewAzureBlobBucket(accountName, accountKey, containerName, blobServiceBaseUrl, apiVersion string,
-	useHttps bool, directory string) (Bucket, error) {
+	useHttps bool, blobNamePrefix string) (Bucket, error) {
 	client, err := storage.NewClient(accountName, accountKey,
 		blobServiceBaseUrl, apiVersion, useHttps)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	b := client.GetBlobService()
 	return &AzureBlobBucket{
-		container: b.GetContainerReference(containerName),
-		directory: directory,
+		container:      b.GetContainerReference(containerName),
+		blobNamePrefix: blobNamePrefix,
 	}, nil
 }
 
 func (bk *AzureBlobBucket) OpenRead(name string) (ObjectReader, error) {
-	blob := bk.container.GetBlobReference(bk.directory + "/" + name)
+	blob := bk.container.GetBlobReference(bk.blobNamePrefix + "/" + name)
 	ioReader, err := blob.Get(&storage.GetBlobOptions{})
 	if err != nil {
-		log.Fatal(err)
 		return nil, err
 	}
 	return &AzureBlobObjectReader{
@@ -102,7 +99,7 @@ func (bk *AzureBlobBucket) OpenRead(name string) (ObjectReader, error) {
 }
 
 func (bk *AzureBlobBucket) OpenWrite(name string) (ObjectWriter, error) {
-	blob := bk.container.GetBlobReference(bk.directory + "/" + name)
+	blob := bk.container.GetBlobReference(bk.blobNamePrefix + "/" + name)
 	isExist, err := blob.Exists()
 	if err != nil {
 		return nil, err

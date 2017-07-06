@@ -71,18 +71,18 @@ func NewBucket(bucketType string, config map[string]interface{}) (Bucket, error)
 		}
 		apiVersion, ok := config["apiVersion"]
 		if !ok {
-			return nil, fmt.Errorf("apiVersion is not provided")
+			apiVersion = "2016-05-31"
 		}
 		useHttps, ok := config["useHttps"]
 		if !ok {
-			return nil, fmt.Errorf("useHttps is not provided")
+			useHttps = false
 		}
-		directory, ok := config["directory"]
+		blobNamePrefix, ok := config["blobNamePrefix"]
 		if !ok {
-			return nil, fmt.Errorf("directory is not provided")
+			blobNamePrefix = ""
 		}
 		return NewAzureBlobBucket(accountName.(string), accountKey.(string), containerName.(string),
-			blobServiceBaseUrl.(string), apiVersion.(string), useHttps.(bool), directory.(string))
+			blobServiceBaseUrl.(string), apiVersion.(string), useHttps.(bool), blobNamePrefix.(string))
 	default:
 		return nil, fmt.Errorf("Unknown bucket type \"%s\"", bucketType)
 	}
