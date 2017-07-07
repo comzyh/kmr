@@ -28,6 +28,12 @@ type BucketDescription struct {
 	Config     BucketConfig `json:"config"`
 }
 
+// WorkerDescription  extra info of worker
+type WorkerDescription struct {
+	Volumes      []map[string]interface{} `json:"volumes,omitempty" patchStrategy:"merge"`
+	VolumeMounts []map[string]interface{} `json:"volumeMounts,omitempty" patchStrategy:"merge" patchMergeKey:"mountPath"`
+}
+
 // JobDescription description of a job
 type JobDescription struct {
 	MapBucket    BucketDescription `json:"mapBucket"`
@@ -39,6 +45,7 @@ type JobDescription struct {
 	Image        string            `json:"image"`
 	Command      []string          `json:"command"`
 	CPULimit     string            `json:"cpulimit"`
+	WorkerDesc   WorkerDescription `json:"workerDesc"`
 }
 
 func (bucket *BucketDescription) Marshal() string {

@@ -74,7 +74,7 @@ func main() {
 
 	if *configFile != "" {
 		var raw []byte
-		if strings.HasPrefix(*configFile, "http") {
+		if strings.HasPrefix(*configFile, "http") { // Fetch config over http
 			log.Infof("Fetching job config from %s", *configFile)
 			resp, err := http.Get(*configFile)
 			if err != nil {
