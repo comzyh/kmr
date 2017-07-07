@@ -2,6 +2,18 @@
 
 
 [[projects]]
+  name = "github.com/Azure/azure-sdk-for-go"
+  packages = ["storage"]
+  revision = "59c277f1b488b81b1a5f944212f25b69bea8ece3"
+  version = "v10.1.0-beta"
+
+[[projects]]
+  name = "github.com/Azure/go-autorest"
+  packages = ["autorest","autorest/adal","autorest/azure","autorest/date"]
+  revision = "10791a4516e77c53ab10f198f144804cca3d5b43"
+  version = "v8.1.0"
+
+[[projects]]
   name = "github.com/PuerkitoBio/purell"
   packages = ["."]
   revision = "0bcb03f4b4d0a9428594752bd2a3b9aa0a9d4bd4"
@@ -30,6 +42,12 @@
   packages = ["spew"]
   revision = "346938d642f2ec3594ed81d874461961cd0faa76"
   version = "v1.1.0"
+
+[[projects]]
+  name = "github.com/dgrijalva/jwt-go"
+  packages = ["."]
+  revision = "d2709f9f1f31ebcda9651b03077758c1f3a0018c"
+  version = "v3.0.0"
 
 [[projects]]
   name = "github.com/docker/distribution"
@@ -146,6 +164,12 @@
   revision = "d0303fe809921458f417bcf828397a65db30a7e4"
 
 [[projects]]
+  name = "github.com/satori/uuid"
+  packages = ["."]
+  revision = "879c5887cd475cd7864858769793b2ceb0d44feb"
+  version = "v1.1.0"
+
+[[projects]]
   branch = "master"
   name = "github.com/spf13/pflag"
   packages = ["."]
@@ -214,6 +238,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "85dcb92837985aa73b876c66a80b5cee06cc8119a19cb82f33c51c45c3809cfc"
+  inputs-digest = "f8644d469753faf27ed73be0f8280d0c3f939db8f923d676192a60849280480d"
   solver-name = "gps-cdcl"
   solver-version = 1

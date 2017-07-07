@@ -5,9 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"math/rand"
 	"net"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -15,6 +15,7 @@ import (
 	"github.com/naturali/kmr/job"
 	"github.com/naturali/kmr/master"
 	"github.com/naturali/kmr/util"
+	"github.com/naturali/kmr/util/log"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -72,7 +73,22 @@ func main() {
 	var jobDescription job.JobDescription
 
 	if *configFile != "" {
-		raw, err := ioutil.ReadFile(*configFile)
+		var raw []byte
+		if strings.HasPrefix(*configFile, "http") {
+			log.Infof("Fetching job config from %s", *configFile)
+			resp, err := http.Get(*configFile)
+			if err != nil {
+				log.Fatalf("Can't fetch %s: %v", *configFile, err)
+			}
+			if resp.StatusCode != 200 {
+				log.Fatalf("Can't fetch %s: HTTP %v", *configFile, resp.StatusCode)
+			}
+			defer resp.Body.Close()
+			raw, err = ioutil.ReadAll(resp.Body)
+		} else {
+			raw, err = ioutil.ReadFile(*configFile)
+		}
+
 		if err != nil {
 			log.Fatalf("Can't read description file '%s': %v", *configFile, err)
 		}
