@@ -1,6 +1,7 @@
 package master
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 
@@ -12,6 +13,7 @@ import (
 )
 
 func (master *Master) newReplicaSet(name string, command []string, image string, replicas int32) v1beta1.ReplicaSet {
+	// generate resourceRequirements
 	var resourceRequirements v1.ResourceRequirements
 	if master.JobDesc.CPULimit != "" {
 		cpulimt, err := resource.ParseQuantity(master.JobDesc.CPULimit)
@@ -27,6 +29,21 @@ func (master *Master) newReplicaSet(name string, command []string, image string,
 			},
 		}
 	}
+	// generate volume stuff
+	var volumes []v1.Volume
+	var volumeMounts []v1.VolumeMount
+
+	if len(master.JobDesc.WorkerDesc.Volumes) > 0 {
+		jsonStr, _ := json.Marshal(master.JobDesc.WorkerDesc.Volumes)
+		json.Unmarshal(jsonStr, &volumes)
+	}
+
+	if len(master.JobDesc.WorkerDesc.VolumeMounts) > 0 {
+		jsonStr, _ := json.Marshal(master.JobDesc.WorkerDesc.VolumeMounts)
+		json.Unmarshal(jsonStr, &volumeMounts)
+	}
+
+	// pod
 	podTemplate := v1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
@@ -47,25 +64,11 @@ func (master *Master) newReplicaSet(name string, command []string, image string,
 							Value: fmt.Sprintf("%s%s", master.JobName, master.port),
 						},
 					},
-					VolumeMounts: []v1.VolumeMount{
-						v1.VolumeMount{
-							Name:      "cephfs",
-							MountPath: "/cephfs",
-						},
-					},
-					Resources: resourceRequirements,
+					VolumeMounts: volumeMounts,
+					Resources:    resourceRequirements,
 				},
 			},
-			Volumes: []v1.Volume{
-				v1.Volume{
-					Name: "cephfs",
-					VolumeSource: v1.VolumeSource{
-						HostPath: &v1.HostPathVolumeSource{
-							Path: "/mnt/cephfs",
-						},
-					},
-				},
-			},
+			Volumes: volumes,
 		},
 	}
 	rsSpec := v1beta1.ReplicaSetSpec{
