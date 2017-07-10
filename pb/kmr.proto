@@ -32,7 +32,7 @@ message Task {
 
 message TaskInfo {
     string jobName = 1;
-    string file = 2;
+    repeated string files = 2; // Batch task for map, shards for reduce
     string mapBucketJson = 3;
     string intermediateBucketJson = 4;
     string reduceBucketJson = 5;
@@ -42,6 +42,7 @@ message TaskInfo {
     string readerType = 9;
     int32 taskID = 10;
     repeated int64 commitMappers = 11;
+    int32 mapBatchSize = 12;
 }
 
 message Response {
