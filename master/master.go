@@ -59,7 +59,7 @@ type Master struct {
 	namespace string
 
 	currentPhase  string
-	commitMappers []int64
+	commitMappers []int64 // commitMappers TaskId->WorkerID, indicate which worker commited the task
 
 	checkpointFile *os.File
 }
@@ -120,11 +120,17 @@ func (master *Master) CheckHeartbeatForEachWorker(taskID int, workerID int64, he
 // Schedule pipes into tasks for the phase (map or reduce). It will return after all the tasks are finished.
 func (master *Master) Schedule(phase string, ck *util.MapReduceCheckPoint) {
 	var nTasks int
+	var batchSize int
 	switch phase {
 	case mapPhase:
-		nTasks = len(master.JobDesc.Map.Objects)
+		batchSize = master.JobDesc.Map.BatchSize
+		nTasks = len(master.JobDesc.Map.Objects) / batchSize
+		if len(master.JobDesc.Map.Objects)%batchSize > 0 {
+			nTasks++
+		}
 	case reducePhase:
 		nTasks = master.JobDesc.Reduce.NReduce
+		batchSize = 1
 	}
 
 	master.Lock()
@@ -142,11 +148,15 @@ func (master *Master) Schedule(phase string, ck *util.MapReduceCheckPoint) {
 			NReduce:                int32(master.JobDesc.Reduce.NReduce),
 			NMap:                   int32(len(master.JobDesc.Map.Objects)),
 			ReaderType:             master.JobDesc.Map.ReaderType,
+			MapBatchSize:           int32(master.JobDesc.Map.BatchSize),
 		}
 		if phase == mapPhase {
-			taskInfo.File = master.JobDesc.Map.Objects[i]
-		}
-		if phase == reducePhase {
+			if (i+1)*batchSize > len(master.JobDesc.Map.Objects) { // Last batch
+				taskInfo.Files = master.JobDesc.Map.Objects[i*batchSize:]
+			} else {
+				taskInfo.Files = master.JobDesc.Map.Objects[i*batchSize : (i+1)*batchSize]
+			}
+		} else if phase == reducePhase {
 			taskInfo.CommitMappers = master.commitMappers
 		}
 		master.tasks[i] = &Task{
@@ -200,7 +210,7 @@ func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*km
 			t.workers[workerID] = id
 			t.state = STATE_INPROGRESS
 			s.master.heartbeat[workerID] = make(chan int)
-			log.Infof("deliver a task")
+			log.Infof("deliver a task %d", id)
 			go s.master.CheckHeartbeatForEachWorker(id, workerID, s.master.heartbeat[workerID])
 			return &kmrpb.Task{
 				WorkerID: workerID,
@@ -221,7 +231,6 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 	s.master.Lock()
 	defer s.master.Unlock()
 
-	if _, ok := s.master.tasks[in.TaskID].workers[in.WorkerID]; ok {
 		var heartbeatCode int
 		switch in.Retcode {
 		case kmrpb.ReportInfo_FINISH:

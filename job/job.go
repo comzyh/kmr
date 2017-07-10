@@ -9,6 +9,7 @@ type MapDescription struct {
 	Image      string   `json:"image"`
 	Command    []string `json:"command"`
 	ReaderType string   `json:"readerType"`
+	BatchSize  int      `json:"batchSize"`
 }
 
 // ReduceDescription ReduceDescription

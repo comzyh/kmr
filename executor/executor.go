@@ -78,7 +78,7 @@ func (cw *ComputeWrap) Run() {
 		}
 		err := cw.phaseSelector(*jobName, *phase,
 			bucket, bucket, bucket,
-			*inputFile, *nMap, *nReduce, *readerType, taskID, 0, make([]int64, *nMap))
+			[]string{*inputFile}, *nMap, *nReduce, *readerType, taskID, 0, make([]int64, *nMap), 1)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -120,8 +120,8 @@ func (cw *ComputeWrap) Run() {
 			json.Unmarshal([]byte(taskInfo.ReduceBucketJson), &reduceBucket)
 
 			err = cw.phaseSelector(taskInfo.JobName, taskInfo.Phase,
-				mapBucket, interBucket, reduceBucket, taskInfo.File,
-				int(taskInfo.NMap), int(taskInfo.NReduce), taskInfo.ReaderType, int(taskInfo.TaskID), task.WorkerID, taskInfo.CommitMappers)
+				mapBucket, interBucket, reduceBucket, taskInfo.Files,
+				int(taskInfo.NMap), int(taskInfo.NReduce), taskInfo.ReaderType, int(taskInfo.TaskID), task.WorkerID, taskInfo.CommitMappers, int(taskInfo.MapBatchSize))
 			retcode = kmrpb.ReportInfo_FINISH
 			if err != nil {
 				log.Debug(err)
@@ -144,9 +144,9 @@ func (cw *ComputeWrap) Run() {
 }
 
 func (cw *ComputeWrap) phaseSelector(jobName string, phase string,
-	mapBucket, interBucket, reduceBucket job.BucketDescription, file string,
+	mapBucket, interBucket, reduceBucket job.BucketDescription, files []string,
 	nMap int, nReduce int, readerType string, taskID int, workerID int64,
-	commitMappers []int64) error {
+	commitMappers []int64, mapBatchSize int) error {
 	interBk, err := bucket.NewBucket(interBucket.BucketType, interBucket.Config)
 	if err != nil {
 		log.Fatalf("Fail to open bucket: %v", err)
@@ -158,16 +158,21 @@ func (cw *ComputeWrap) phaseSelector(jobName string, phase string,
 		if err != nil {
 			log.Fatalf("Fail to open mapbucket: %v", err)
 		}
-		reader, err := mapBk.OpenRead(file)
-		if err != nil {
-			log.Fatalf("Fail to open object %s: %v", file, err)
+		readers := make([]records.RecordReader, 0)
+		for _, file := range files {
+			reader, err := mapBk.OpenRead(file)
+			if err != nil {
+				log.Fatalf("Fail to open object %s: %v", file, err)
+			}
+			recordReader := records.MakeRecordReader(readerType, map[string]interface{}{"reader": reader})
+			readers = append(readers, recordReader)
 		}
-		recordReader := records.MakeRecordReader(readerType, map[string]interface{}{"reader": reader})
+		batchReader := records.NewChainReader(readers)
 		// Mapper
-		if err := cw.doMap(recordReader, interBk, taskID, nReduce, workerID); err != nil {
+		if err := cw.doMap(batchReader, interBk, taskID, nReduce, workerID); err != nil {
 			log.Fatalf("Fail to Map: %v", err)
 		}
-		recordReader.Close()
+		batchReader.Close()
 	case "reduce":
 		log.Infof("starting id%d reducer", nReduce)
 		reduceBk, err := bucket.NewBucket(reduceBucket.BucketType, reduceBucket.Config)
@@ -181,7 +186,7 @@ func (cw *ComputeWrap) phaseSelector(jobName string, phase string,
 			log.Fatalf("Failed to open intermediate: %v", err)
 		}
 		recordWriter := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
-		if err = cw.doReduce(interBk, taskID, nMap, commitMappers, recordWriter); err != nil {
+		if err = cw.doReduce(interBk, taskID, nMap, mapBatchSize, commitMappers, recordWriter); err != nil {
 			log.Fatalf("Fail to Reduce: %v", err)
 		}
 		recordWriter.Close()
@@ -328,10 +333,14 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 }
 
 // doReduce does reduce operation
-func (cw *ComputeWrap) doReduce(interBk bucket.Bucket, reduceID int, nMap int, commitMappers []int64, writer records.RecordWriter) error {
+func (cw *ComputeWrap) doReduce(interBk bucket.Bucket, reduceID int, nMap, batchSize int, commitMappers []int64, writer records.RecordWriter) error {
 	startTime := time.Now()
 	readers := make([]records.RecordReader, 0)
-	for i := 0; i < nMap; i++ {
+	nBatch := nMap / batchSize
+	if nMap%batchSize > 0 {
+		nBatch += 1
+	}
+	for i := 0; i < nBatch; i++ {
 		reader, err := interBk.OpenRead(bucket.IntermediateFileName(i, reduceID, commitMappers[i]))
 		recordReader := records.NewStreamRecordReader(reader)
 		if err != nil {
