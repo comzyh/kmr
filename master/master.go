@@ -235,9 +235,9 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 		default:
 			panic("unknown ReportInfo")
 		}
-		go func() {
-			s.master.heartbeat[in.WorkerID] <- heartbeatCode
-		}()
+		go func(ch chan<- int) {
+			ch <- heartbeatCode
+		}(s.master.heartbeat[in.WorkerID])
 	}
 
 	return &kmrpb.Response{Retcode: 0}, nil
