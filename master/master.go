@@ -231,6 +231,7 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 	s.master.Lock()
 	defer s.master.Unlock()
 
+	if _, ok := s.master.tasks[in.TaskID].workers[in.WorkerID]; ok {
 		var heartbeatCode int
 		switch in.Retcode {
 		case kmrpb.ReportInfo_FINISH:
