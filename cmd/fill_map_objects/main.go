@@ -17,6 +17,7 @@ import (
 var (
 	configFile  = flag.String("config", "", "MapReduce Job description JSON file, should be http(s) URL or a filepath")
 	objectsFile = flag.String("objects", "", "inputFile")
+	indent      = flag.String("indent", "", "indent string for print json")
 )
 
 func main() {
@@ -53,10 +54,16 @@ func main() {
 		log.Fatalf("Can't parse description file: %v", err)
 	}
 
-	if err != nil {
-		log.Fatal(err)
+	var inputFile *os.File
+	if *objectsFile == "" {
+		inputFile = os.Stdin
+	} else {
+		inputFile, err = os.Open(*objectsFile)
+		if err != nil {
+			log.Fatalf("Can't open %s: %v", *objectsFile, err)
+		}
 	}
-	reader := bufio.NewReader(os.Stdin)
+	reader := bufio.NewReader(inputFile)
 	objects := make([]string, 0)
 	var line string
 	for {
@@ -70,6 +77,11 @@ func main() {
 	}
 	jobDescription.Map.Objects = objects
 
-	rebuiltJSON, _ := json.Marshal(jobDescription)
+	var rebuiltJSON []byte
+	if *indent == "" {
+		rebuiltJSON, _ = json.Marshal(jobDescription)
+	} else {
+		rebuiltJSON, _ = json.MarshalIndent(jobDescription, "", *indent)
+	}
 	fmt.Println(string(rebuiltJSON))
 }
