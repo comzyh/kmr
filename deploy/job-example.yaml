@@ -7,6 +7,7 @@ metadata:
 spec:
   serviceAccountName: kmr-master
   restartPolicy: Never
+  imagePullPolicy: Always
   containers:
   - name: example-job-name
     image: kmr
