@@ -6,6 +6,8 @@ metadata:
     name: example-job-name
 spec:
   serviceAccountName: kmr-master
+  restartPolicy: Never
+  imagePullPolicy: Always
   containers:
   - name: example-job-name
     image: kmr
@@ -33,4 +35,3 @@ spec:
     targetPort: 50051
   selector:
     name: example-job-name
-
