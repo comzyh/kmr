@@ -94,7 +94,6 @@ func (server *KmrManagerWeb) Serve(port *string) {
 
 	// Routing
 	handler.HandleFunc("/", server.IndexHandler)
-	handler.HandleFunc("/hello", server.HelloHandler)
 	handler.HandleFunc("/api/v1/create", server.CreateJobHandler)
 	handler.HandleFunc("/api/v1/jobs/", server.JobHandler)
 
@@ -106,10 +105,6 @@ func (server *KmrManagerWeb) Serve(port *string) {
 
 func (server *KmrManagerWeb) IndexHandler(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, path.Join(server.uiDir, "index.html"))
-}
-
-func (server *KmrManagerWeb) HelloHandler(w http.ResponseWriter, r *http.Request) {
-	io.WriteString(w, "Hello!")
 }
 
 func (server *KmrManagerWeb) JobHandler(w http.ResponseWriter, r *http.Request) {
